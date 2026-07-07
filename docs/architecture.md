@@ -108,15 +108,15 @@ Registered user progress is stored in Supabase. Row-level security should ensure
 
 ## MVP vs Later
 
-| Area | MVP | Later |
-| --- | --- | --- |
-| Backend | Supabase Auth and Postgres | VPS workers and custom backend services if needed |
-| Pronunciation | Browser Web Speech API | Paid pronunciation API with richer scoring |
-| Audio | Browser/native-like voice where possible | Recorded native-speaker audio or generated premium voices |
-| Translation | Reveal helper for Arabic plus common languages | Better explanations, examples, and localization |
-| Gamification | XP, streaks, levels, badges, missions, weekly/monthly leaderboards | Cohorts, friends, events, advanced rewards |
-| Monetization | Planned structurally only | Stripe, premium packs, custom scenarios |
-| Leaderboards | Postgres-first weekly/monthly rankings | Redis or cached aggregates if traffic requires it |
+| Area          | MVP                                                                | Later                                                     |
+| ------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| Backend       | Supabase Auth and Postgres                                         | VPS workers and custom backend services if needed         |
+| Pronunciation | Browser Web Speech API                                             | Paid pronunciation API with richer scoring                |
+| Audio         | Browser/native-like voice where possible                           | Recorded native-speaker audio or generated premium voices |
+| Translation   | Reveal helper for Arabic plus common languages                     | Better explanations, examples, and localization           |
+| Gamification  | XP, streaks, levels, badges, missions, weekly/monthly leaderboards | Cohorts, friends, events, advanced rewards                |
+| Monetization  | Planned structurally only                                          | Stripe, premium packs, custom scenarios                   |
+| Leaderboards  | Postgres-first weekly/monthly rankings                             | Redis or cached aggregates if traffic requires it         |
 
 ## Related Docs
 

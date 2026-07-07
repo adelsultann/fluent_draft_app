@@ -1,6 +1,7 @@
 # FluentDraft MVP Implementation Plan
 
 ## Summary
+
 Build FluentDraft as a focused scenario-based English writing practice app from an empty project directory. The MVP will use **Next.js App Router + TypeScript + Tailwind CSS + Supabase Auth/Postgres**, matching the Notion technical direction.
 
 The first release should help users practice real-world English scenarios through this loop:

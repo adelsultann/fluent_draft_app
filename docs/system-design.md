@@ -257,15 +257,15 @@ Leaderboards should display safe public fields only: display name, country, rank
 
 ## Failure Modes
 
-| Failure | Expected Behavior |
-| --- | --- |
-| Browser speech unsupported | Show unsupported message and allow lesson continuation |
-| Microphone denied | Explain permission issue and allow skip/continue |
-| Network failure during registered lesson | Keep local progress where possible and retry persistence |
-| Signup after demo fails | Keep demo result in browser state and let user retry |
-| Score persistence fails | Show retryable error and avoid pretending the score was saved |
-| Leaderboard update delayed | Save score first; leaderboard can refresh after persistence succeeds |
-| Translation unavailable | Keep English practice usable and show a non-blocking message |
+| Failure                                  | Expected Behavior                                                    |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| Browser speech unsupported               | Show unsupported message and allow lesson continuation               |
+| Microphone denied                        | Explain permission issue and allow skip/continue                     |
+| Network failure during registered lesson | Keep local progress where possible and retry persistence             |
+| Signup after demo fails                  | Keep demo result in browser state and let user retry                 |
+| Score persistence fails                  | Show retryable error and avoid pretending the score was saved        |
+| Leaderboard update delayed               | Save score first; leaderboard can refresh after persistence succeeds |
+| Translation unavailable                  | Keep English practice usable and show a non-blocking message         |
 
 ## Scaling Path
 

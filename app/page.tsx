@@ -1,8 +1,15 @@
+import AppShell from "@/components/layout/app-shell";
+
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center gap-4 p-8">
-      <p className="text-primary text-lg font-semibold">FluentDraft</p>
-      <p className="text-text-muted">Practice real-world English writing.</p>
-    </div>
+    <AppShell>
+      <div className="flex flex-col items-center justify-center gap-4 py-16">
+        <p className="text-primary text-lg font-semibold">FluentDraft</p>
+        <p className="text-text-muted text-center max-w-md">
+          Practice real-world English writing. Build confidence through scenarios, typing, recall,
+          and pronunciation.
+        </p>
+      </div>
+    </AppShell>
   );
 }

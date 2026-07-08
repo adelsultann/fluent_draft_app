@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "validate:content": "tsx scripts/validate-scenario-seeds.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.1",
@@ -26,6 +27,7 @@
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.4",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "typescript": "^5"
   }
 }

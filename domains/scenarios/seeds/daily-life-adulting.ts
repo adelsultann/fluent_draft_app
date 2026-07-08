@@ -239,9 +239,9 @@ const dailyLifeAdulting = {
         },
         {
           order: 2,
-          text: 'unfortunately the left earbud does not produce any sound',
-          meaning: 'A factual way to describe a product defect without emotional language.',
-          example: 'Unfortunately the screen has a visible crack upon arrival.',
+          text: 'does not produce any sound',
+          meaning: 'A factual way to describe a specific product defect — use "does not" + verb for clear complaints.',
+          example: 'The microphone does not pick up any sound during calls.',
           commonMistake:
             '"Does not work" is too vague. Always describe the specific symptom in customer support emails.',
           pronunciationRequired: false,
@@ -283,7 +283,7 @@ const dailyLifeAdulting = {
           text: 'الموضوع: طلب رقم SB-48291 — منتج معيب\n\nعزيزي فريق دعم ساوند بوكس،\n\nأكتب إليكم للإبلاغ عن مشكلة في طلبي الأخير. استلمت الطرد بالأمس، ولكن للأسف السماعة اليسرى من سماعات الرأس اللاسلكية لا تصدر أي صوت.\n\nرقم طلبي هو SB-48291. حاولت شحن الجهاز وإعادة ضبطه كما هو مقترح في الدليل، ولكن المشكلة مستمرة.\n\nأود طلب استبدال في أقرب وقت ممكن. من فضلكم أعلموني ما هي الخطوات التي يجب علي اتخاذها بعد ذلك.\n\nشكرًا لمساعدتكم،\nكيسي',
         },
         { languageCode: 'ar', sourceType: 'key_phrase', sourceKey: 'phrase-1', text: 'أكتب إليكم للإبلاغ عن مشكلة في' },
-        { languageCode: 'ar', sourceType: 'key_phrase', sourceKey: 'phrase-2', text: 'للأسف السماعة اليسرى لا تصدر أي صوت' },
+        { languageCode: 'ar', sourceType: 'key_phrase', sourceKey: 'phrase-2', text: 'لا يصدر أي صوت' },
         { languageCode: 'ar', sourceType: 'key_phrase', sourceKey: 'phrase-3', text: 'المشكلة مستمرة' },
         { languageCode: 'ar', sourceType: 'key_phrase', sourceKey: 'phrase-4', text: 'أود طلب استبدال' },
         { languageCode: 'ar', sourceType: 'key_phrase', sourceKey: 'phrase-5', text: 'من فضلكم أعلموني ما هي الخطوات التي يجب علي اتخاذها بعد ذلك' },
@@ -298,7 +298,7 @@ const dailyLifeAdulting = {
         {
           phraseOrder: 2,
           blankedText:
-            'I received my package yesterday, but ___.',
+            'I received my package yesterday, but unfortunately the left earbud of the wireless headphones ___.',
         },
         {
           phraseOrder: 3,

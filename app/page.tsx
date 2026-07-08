@@ -1,5 +1,4 @@
 import AppShell from "@/components/layout/app-shell";
-
 export default function Home() {
   return (
     <AppShell>
@@ -9,6 +8,7 @@ export default function Home() {
           Practice real-world English writing. Build confidence through scenarios, typing, recall,
           and pronunciation.
         </p>
+        
       </div>
     </AppShell>
   );

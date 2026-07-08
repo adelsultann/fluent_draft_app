@@ -1,6 +1,6 @@
 ---
 description: Architect/reviewer for FluentDraft. Produces small implementation briefs, checks scope, reviews diffs, and prevents overengineering. Does not write implementation code.
-mode: medium
+mode: primary
 model: openai/gpt-5.3-codex
 tools:
   read: true

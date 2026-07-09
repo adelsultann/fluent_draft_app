@@ -6,7 +6,7 @@ This document explains FluentDraft's architecture in a way that is useful for pr
 
 FluentDraft is a scenario-based English writing practice app. The core experience helps users read, listen, pronounce, type, recall, review, and save practical English phrases from real-world situations.
 
-This document covers the high-level system shape, product domains, important user flows, and MVP-to-future architecture path. Detailed system behavior belongs in [system-design.md](./system-design.md), database design belongs in [database.md](./database.md), code organization belongs in [project-structure.md](./project-structure.md), and visual direction belongs in [style-guide.md](./style-guide.md).
+This document covers the high-level system shape, product domains, important user flows, and MVP-to-future architecture path. Detailed database design belongs in [database.md](./database.md), and code organization belongs in [project-structure.md](./project-structure.md).
 
 ## Architecture Principles
 
@@ -108,23 +108,20 @@ Registered user progress is stored in Supabase. Row-level security should ensure
 
 ## MVP vs Later
 
-| Area          | MVP                                                                | Later                                                     |
-| ------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
-| Backend       | Supabase Auth and Postgres                                         | VPS workers and custom backend services if needed         |
-| Pronunciation | Browser Web Speech API                                             | Paid pronunciation API with richer scoring                |
-| Audio         | Browser/native-like voice where possible                           | Recorded native-speaker audio or generated premium voices |
-| Translation   | Reveal helper for Arabic plus common languages                     | Better explanations, examples, and localization           |
-| Gamification  | XP, streaks, levels, badges, missions, weekly/monthly leaderboards | Cohorts, friends, events, advanced rewards                |
-| Monetization  | Planned structurally only                                          | Stripe, premium packs, custom scenarios                   |
-| Leaderboards  | Postgres-first weekly/monthly rankings                             | Redis or cached aggregates if traffic requires it         |
+| Area | MVP | Later |
+| --- | --- | --- |
+| Backend | Supabase Auth and Postgres | VPS workers and custom backend services if needed |
+| Pronunciation | Browser Web Speech API | Paid pronunciation API with richer scoring |
+| Audio | Browser/native-like voice where possible | Recorded native-speaker audio or generated premium voices |
+| Translation | Reveal helper for Arabic plus common languages | Better explanations, examples, and localization |
+| Gamification | XP, streaks, levels, badges, missions, weekly/monthly leaderboards | Cohorts, friends, events, advanced rewards |
+| Monetization | Planned structurally only | Stripe, premium packs, custom scenarios |
+| Leaderboards | Postgres-first weekly/monthly rankings | Redis or cached aggregates if traffic requires it |
 
 ## Related Docs
 
-- [Docs index](./README.md)
 - [plan.md](../plan.md)
-- [system-design.md](./system-design.md)
 - [database.md](./database.md)
-- [api-contracts.md](./api-contracts.md)
 - [project-structure.md](./project-structure.md)
-- [style-guide.md](./style-guide.md)
 - [testing-strategy.md](./testing-strategy.md)
+

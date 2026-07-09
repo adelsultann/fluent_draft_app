@@ -1,6 +1,12 @@
-import type { ReactNode } from "react";
+import type { ReactNode } from 'react';
 
-export default function AppShell({ children }: { children: ReactNode }) {
+interface AppShellProps {
+  children: ReactNode;
+  /** Optional element rendered on the right side of the header (e.g. auth status). */
+  headerRight?: ReactNode;
+}
+
+export default function AppShell({ children, headerRight }: AppShellProps) {
   return (
     <div className="flex min-h-full flex-col">
       <header className="bg-primary text-white">
@@ -23,6 +29,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               Leaderboard
             </a>
           </nav>
+          {headerRight && <div className="flex-shrink-0">{headerRight}</div>}
         </div>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>

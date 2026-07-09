@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui';
 import { Input } from '@/components/ui';
@@ -13,6 +14,7 @@ interface AuthFormProps {
 
 export default function AuthForm({ mode }: AuthFormProps) {
   const isSignup = mode === 'signup';
+  const router = useRouter();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -66,6 +68,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
           setSuccessMessage('Signed in successfully!');
           setEmail('');
           setPassword('');
+          router.refresh();
         }
       }
     } catch (err) {

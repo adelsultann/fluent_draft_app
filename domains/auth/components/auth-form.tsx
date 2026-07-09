@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui';
 import { Input } from '@/components/ui';
@@ -15,6 +15,8 @@ interface AuthFormProps {
 export default function AuthForm({ mode }: AuthFormProps) {
   const isSignup = mode === 'signup';
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = searchParams.get('next') ?? '/';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -55,6 +57,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
           );
           setEmail('');
           setPassword('');
+          router.refresh();
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -65,10 +68,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
         if (error) {
           setErrorMessage(error.message);
         } else {
-          setSuccessMessage('Signed in successfully!');
           setEmail('');
           setPassword('');
-          router.refresh();
+          router.push(nextPath);
         }
       }
     } catch (err) {

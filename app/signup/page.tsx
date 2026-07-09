@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import AppShell from '@/components/layout/app-shell';
 import AuthForm from '@/domains/auth/components/auth-form';
 import AuthStatus from '@/domains/auth/components/auth-status';
@@ -12,7 +13,9 @@ export default async function SignupPage() {
         <AuthStatus isSignedIn={!!user} email={user?.email} />
       }
     >
-      <AuthForm mode="signup" />
+      <Suspense>
+        <AuthForm mode="signup" />
+      </Suspense>
     </AppShell>
   );
 }

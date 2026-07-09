@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { Button } from '@/components/ui';
 import { Input } from '@/components/ui';
-import { ENGLISH_LEVELS, SUPPORTED_LANGUAGES, COUNTRIES } from '../constants';
+import { ENGLISH_LEVELS, SUPPORTED_LANGUAGES, COUNTRIES, countryCodeToFlag } from '../constants';
 import type { OnboardingFormData } from '../types';
 
 /**
@@ -21,9 +21,35 @@ export default function OnboardingForm() {
   const [englishLevel, setEnglishLevel] = useState('');
   const [targetLanguageCode, setTargetLanguageCode] = useState('');
   const [countryCode, setCountryCode] = useState('');
+  const [countrySearch, setCountrySearch] = useState('');
+  const [countryOpen, setCountryOpen] = useState(false);
+  const countryRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+
+  // Close the country dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (countryRef.current && !countryRef.current.contains(e.target as Node)) {
+        setCountryOpen(false);
+      }
+    }
+    if (countryOpen) {
+      document.addEventListener('mousedown', handleClick);
+      return () => document.removeEventListener('mousedown', handleClick);
+    }
+  }, [countryOpen]);
+
+  const selectedCountry = COUNTRIES.find((c) => c.code === countryCode);
+
+  const filteredCountries = countrySearch
+    ? COUNTRIES.filter(
+        (c) =>
+          c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+          c.code.toLowerCase().includes(countrySearch.toLowerCase()),
+      )
+    : COUNTRIES;
 
   function validate(): Record<string, string> {
     const errs: Record<string, string> = {};
@@ -183,28 +209,94 @@ export default function OnboardingForm() {
             </p>
           </div>
 
-          {/* Country */}
-          <div className="flex flex-col gap-1">
-            <label htmlFor="onboarding-country" className={labelClass}>
+          {/* Country — searchable with flags */}
+          <div className="flex flex-col gap-1" ref={countryRef}>
+            <label htmlFor="onboarding-country-search" className={labelClass}>
               Country
             </label>
-            <select
-              id="onboarding-country"
-              value={countryCode}
-              onChange={(e) => setCountryCode(e.target.value)}
-              disabled={loading}
-              className={selectClass}
-              aria-describedby={
-                errors.countryCode ? 'onboarding-country-error' : 'onboarding-country-help'
-              }
-            >
-              <option value="">Select your country…</option>
-              {COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+
+            {/* Trigger / search input */}
+            <div className="relative">
+              <input
+                id="onboarding-country-search"
+                type="text"
+                placeholder="Search your country…"
+                value={
+                  countryOpen
+                    ? countrySearch
+                    : selectedCountry
+                      ? `${countryCodeToFlag(selectedCountry.code)} ${selectedCountry.name}`
+                      : ''
+                }
+                onChange={(e) => {
+                  setCountrySearch(e.target.value);
+                  setCountryOpen(true);
+                  if (countryCode) setCountryCode('');
+                }}
+                onFocus={() => {
+                  setCountryOpen(true);
+                  setCountrySearch('');
+                }}
+                disabled={loading}
+                className={selectClass + ' w-full pr-8'}
+                role="combobox"
+                aria-expanded={countryOpen}
+                aria-controls="onboarding-country-listbox"
+                aria-haspopup="listbox"
+                aria-autocomplete="list"
+                aria-describedby={
+                  errors.countryCode ? 'onboarding-country-error' : 'onboarding-country-help'
+                }
+                autoComplete="off"
+              />
+              {/* Chevron */}
+              <span
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted"
+                aria-hidden="true"
+              >
+                {countryOpen ? '▲' : '▼'}
+              </span>
+            </div>
+
+            {/* Dropdown list */}
+            {countryOpen && (
+              <ul
+                id="onboarding-country-listbox"
+                role="listbox"
+                className="max-h-56 overflow-y-auto rounded-md border border-border bg-surface shadow-md"
+              >
+                {filteredCountries.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-text-muted">No countries found.</li>
+                ) : (
+                  filteredCountries.map((c) => (
+                    <li
+                      key={c.code}
+                      role="option"
+                      aria-selected={countryCode === c.code}
+                      onClick={() => {
+                        setCountryCode(c.code);
+                        setCountrySearch('');
+                        setCountryOpen(false);
+                        setErrors((prev) => {
+                          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                          const { countryCode: _c, ...rest } = prev;
+                          return rest;
+                        });
+                      }}
+                      className={`flex cursor-pointer items-center gap-2 px-3 py-2 text-sm transition-colors ${
+                        countryCode === c.code
+                          ? 'bg-action/10 text-action font-medium'
+                          : 'hover:bg-background'
+                      }`}
+                    >
+                      <span className="text-lg leading-none">{countryCodeToFlag(c.code)}</span>
+                      <span>{c.name}</span>
+                    </li>
+                  ))
+                )}
+              </ul>
+            )}
+
             {errors.countryCode && (
               <p id="onboarding-country-error" className={errorClass}>
                 {errors.countryCode}

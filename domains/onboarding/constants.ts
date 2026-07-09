@@ -50,6 +50,19 @@ export const SUPPORTED_LANGUAGES = [
 // Countries (common learner origins + major English-speaking countries)
 // ---------------------------------------------------------------------------
 
+/**
+ * Convert a 2‑letter ISO country code to a flag emoji
+ * using Unicode regional indicator symbols.
+ *
+ * Example: countryCodeToFlag('US') → '🇺🇸'
+ */
+export function countryCodeToFlag(code: string): string {
+  if (!code || code === 'OTHER') return '🌐';
+  const upper = code.toUpperCase();
+  // Regional indicator A = U+1F1E6, so we offset from 'A' (65)
+  return String.fromCodePoint(...[...upper].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
 export const COUNTRIES = [
   { code: 'SA', name: 'Saudi Arabia' },
   { code: 'AE', name: 'United Arab Emirates' },

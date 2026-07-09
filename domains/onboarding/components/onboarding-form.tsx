@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { Button } from '@/components/ui';
 import { Input } from '@/components/ui';
 import { ENGLISH_LEVELS, SUPPORTED_LANGUAGES, COUNTRIES, countryCodeToFlag } from '../constants';
+import { completeOnboarding } from '../actions';
 import type { OnboardingFormData } from '../types';
 
 /**
@@ -26,7 +27,6 @@ export default function OnboardingForm() {
   const countryRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [submitted, setSubmitted] = useState(false);
 
   // Close the country dropdown on outside click
   useEffect(() => {
@@ -62,7 +62,6 @@ export default function OnboardingForm() {
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setSubmitted(false);
 
     const validationErrors = validate();
     setErrors(validationErrors);
@@ -70,8 +69,6 @@ export default function OnboardingForm() {
 
     setLoading(true);
     try {
-      // Task 19 will persist this data to user_profiles.
-      // For now, we simulate success so the UI flow is complete.
       const payload: OnboardingFormData = {
         displayName: displayName.trim(),
         englishLevel: englishLevel as OnboardingFormData['englishLevel'],
@@ -79,40 +76,22 @@ export default function OnboardingForm() {
         countryCode,
       };
 
-      // Simulate a short delay so the loading state is visible.
-      await new Promise((r) => setTimeout(r, 400));
+      const result = await completeOnboarding(payload);
 
-      console.log('Onboarding payload (will be persisted in Task 19):', payload);
-
-      setSubmitted(true);
+      if (!result.success) {
+        setErrors((prev) => {
+          const next: Record<string, string> = { ...prev };
+          if (result.fieldErrors) Object.assign(next, result.fieldErrors);
+          if (result.error) next.form = result.error;
+          return next;
+        });
+      }
+      // On success the server action redirects — no explicit setState needed.
     } catch {
       setErrors({ form: 'Something went wrong. Please try again.' });
     } finally {
       setLoading(false);
     }
-  }
-
-  if (submitted) {
-    return (
-      <div className="mx-auto w-full max-w-md text-center">
-        <div className="rounded-lg border border-border bg-surface p-6 shadow-sm">
-          <p className="text-lg font-semibold text-success">All set!</p>
-          <p className="mt-2 text-sm text-text-muted">
-            Your preferences have been saved.
-            {process.env.NODE_ENV === 'development' &&
-              ' (Persistence will be wired in Task 19.)'}
-          </p>
-          <p className="mt-4">
-            <a
-              href="/dashboard"
-              className="inline-block rounded-md bg-action px-4 py-2 text-sm font-medium text-white hover:bg-action/90 transition-colors"
-            >
-              Go to Dashboard
-            </a>
-          </p>
-        </div>
-      </div>
-    );
   }
 
   return (

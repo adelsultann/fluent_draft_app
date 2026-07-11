@@ -46,6 +46,10 @@ export interface LessonScoreResult {
   savePhrasePoints: number;
   streakBonus: number;
   difficultyMultiplier: number;
+  /** Multiplier applied for repeated lesson completion (1.0 = first time, 0.5 = repeat). */
+  repeatMultiplier: number;
+  /** Multiplier applied for skipped phases (1.0 = all phases completed). */
+  phaseCompletionMultiplier: number;
   totalBeforeMultiplier: number;
   totalScore: number;
 }
@@ -64,7 +68,12 @@ export interface ScoreCalculationInput {
   firstActivityToday: boolean;
   /** Whether this is a repeat completion of the same lesson. */
   isRepeat: boolean;
+  /** Number of required phases completed (1–4).  Defaults to 4. */
+  completedPhases?: number;
 }
+
+/** Number of required practice lesson phases. */
+export const REQUIRED_PHASES = 4;
 
 /** Default scoring constants — source of truth: plan.md § Scoring */
 export const SCORING = {

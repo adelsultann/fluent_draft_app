@@ -19,6 +19,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getScenarioWithPack } from '@/domains/scenarios/data';
 import { getScenarioDbId, getPhraseDbId } from '@/domains/scenarios/db-ids';
 import { isExactMatch } from '@/domains/scoring/engine';
+import { calculateScore } from '@/domains/scoring/engine';
+import type { TypedPhraseResult, LessonScoreResult } from '@/domains/scoring/types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbClient = SupabaseClient<any>;
@@ -40,6 +42,8 @@ export interface CompleteLessonInput {
   typedRecallAttempts: PracticeAttemptInput[];
   savedPhraseOrders: number[];
   reviewedMistakes: boolean;
+  /** The scenario's difficulty level (used for scoring). */
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
 }
 
 export interface CompleteLessonResult {
@@ -51,6 +55,8 @@ export interface CompleteLessonResult {
   practiceTotal?: number;
   recallCorrect?: number;
   recallTotal?: number;
+  /** Trusted server-calculated score breakdown. */
+  score?: LessonScoreResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +126,55 @@ export async function completeLesson(
     );
   }
 
-  // 5. Insert lesson_attempt
+  // 5. Build validated phrase results for scoring
+  const phraseResults: TypedPhraseResult[] = [];
+  let practiceCorrect = 0;
+  let practiceTotal = 0;
+  let recallCorrect = 0;
+  let recallTotal = 0;
+
+  for (const a of input.typedPracticeAttempts) {
+    const expected = phraseTextByOrder.get(a.phraseOrder);
+    if (!expected) continue;
+    const correct = isExactMatch(a.typedText, expected);
+    phraseResults.push({
+      keyPhraseId: getPhraseDbId(input.scenarioSlug, a.phraseOrder),
+      expectedText: expected,
+      typedText: a.typedText,
+      attemptNumber: a.attemptNumber,
+      correct,
+    });
+    practiceTotal++;
+    if (correct) practiceCorrect++;
+  }
+
+  for (const a of input.typedRecallAttempts) {
+    const expected = phraseTextByOrder.get(a.phraseOrder);
+    if (!expected) continue;
+    const correct = isExactMatch(a.typedText, expected);
+    phraseResults.push({
+      keyPhraseId: getPhraseDbId(input.scenarioSlug, a.phraseOrder),
+      expectedText: expected,
+      typedText: a.typedText,
+      attemptNumber: a.attemptNumber,
+      correct,
+    });
+    recallTotal++;
+    if (correct) recallCorrect++;
+  }
+
+  // 6. Calculate trusted score (server-side, never trust client)
+  const score = calculateScore({
+    difficulty: input.difficulty ?? 'beginner',
+    completed: true,
+    phraseResults,
+    savedPhraseCount: validSavedOrders.length,
+    firstActivityToday: true,
+    isRepeat: false,
+    completedPhases: 4,
+  });
+
+  // 7. Insert lesson_attempt
   const now = new Date().toISOString();
   const { data: lessonAttempt, error: lessonError } = await supabase
     .from('lesson_attempts')
@@ -131,7 +185,7 @@ export async function completeLesson(
       current_phase: 'save',
       completed_required_phases: ['understand', 'practice', 'recall', 'save'],
       reviewed_mistakes: input.reviewedMistakes,
-      final_score: 0,
+      final_score: score.totalScore,
       started_at: now,
       completed_at: now,
     })
@@ -147,52 +201,15 @@ export async function completeLesson(
 
   const lessonAttemptId = lessonAttempt.id;
 
-  // 6. Insert phrase_attempts
-  let practiceCorrect = 0;
-  let practiceTotal = 0;
-  let recallCorrect = 0;
-  let recallTotal = 0;
-
-  const phraseAttemptRows: Array<{
-    lesson_attempt_id: string;
-    key_phrase_id: string;
-    typed_text: string;
-    expected_text: string;
-    attempt_number: number;
-    is_correct: boolean;
-  }> = [];
-
-  for (const a of input.typedPracticeAttempts) {
-    const expected = phraseTextByOrder.get(a.phraseOrder);
-    if (!expected) continue;
-    const correct = isExactMatch(a.typedText, expected);
-    phraseAttemptRows.push({
-      lesson_attempt_id: lessonAttemptId,
-      key_phrase_id: getPhraseDbId(input.scenarioSlug, a.phraseOrder),
-      typed_text: a.typedText,
-      expected_text: expected,
-      attempt_number: a.attemptNumber,
-      is_correct: correct,
-    });
-    practiceTotal++;
-    if (correct) practiceCorrect++;
-  }
-
-  for (const a of input.typedRecallAttempts) {
-    const expected = phraseTextByOrder.get(a.phraseOrder);
-    if (!expected) continue;
-    const correct = isExactMatch(a.typedText, expected);
-    phraseAttemptRows.push({
-      lesson_attempt_id: lessonAttemptId,
-      key_phrase_id: getPhraseDbId(input.scenarioSlug, a.phraseOrder),
-      typed_text: a.typedText,
-      expected_text: expected,
-      attempt_number: a.attemptNumber,
-      is_correct: correct,
-    });
-    recallTotal++;
-    if (correct) recallCorrect++;
-  }
+  // 8. Insert phrase_attempts (rows built from already-validated phraseResults)
+  const phraseAttemptRows = phraseResults.map((r) => ({
+    lesson_attempt_id: lessonAttemptId,
+    key_phrase_id: r.keyPhraseId,
+    typed_text: r.typedText,
+    expected_text: r.expectedText,
+    attempt_number: r.attemptNumber,
+    is_correct: r.correct,
+  }));
 
   if (phraseAttemptRows.length > 0) {
     const { error: paError } = await supabase
@@ -206,7 +223,7 @@ export async function completeLesson(
     }
   }
 
-  // 7. Insert phrase_bank_items for saved phrases
+  // 9. Insert phrase_bank_items for saved phrases
   let savedCount = 0;
   if (validSavedOrders.length > 0) {
     const bankRows = validSavedOrders.map((order) => ({
@@ -232,7 +249,7 @@ export async function completeLesson(
     savedCount = count ?? validSavedOrders.length;
   }
 
-  // 8. Return result
+  // 10. Return result
   return {
     success: true,
     lessonAttemptId,
@@ -241,5 +258,17 @@ export async function completeLesson(
     practiceTotal,
     recallCorrect,
     recallTotal,
+    score: {
+      accuracyPoints: score.accuracyPoints,
+      recallPoints: score.recallPoints,
+      completionPoints: score.completionPoints,
+      savePhrasePoints: score.savePhrasePoints,
+      streakBonus: score.streakBonus,
+      difficultyMultiplier: score.difficultyMultiplier,
+      repeatMultiplier: score.repeatMultiplier,
+      phaseCompletionMultiplier: score.phaseCompletionMultiplier,
+      totalBeforeMultiplier: score.totalBeforeMultiplier,
+      totalScore: score.totalScore,
+    },
   };
 }

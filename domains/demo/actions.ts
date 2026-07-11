@@ -53,6 +53,8 @@ export interface LessonScoreSummary {
   savePhrasePoints: number;
   streakBonus: number;
   difficultyMultiplier: number;
+  repeatMultiplier: number;
+  phaseCompletionMultiplier: number;
   totalBeforeMultiplier: number;
   totalScore: number;
 }
@@ -254,6 +256,8 @@ export async function convertDemoProgress(
       savePhrasePoints: score.savePhrasePoints,
       streakBonus: score.streakBonus,
       difficultyMultiplier: score.difficultyMultiplier,
+      repeatMultiplier: score.repeatMultiplier,
+      phaseCompletionMultiplier: score.phaseCompletionMultiplier,
       totalBeforeMultiplier: score.totalBeforeMultiplier,
       totalScore: score.totalScore,
     },

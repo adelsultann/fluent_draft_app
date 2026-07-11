@@ -325,4 +325,107 @@ describe('calculateScore', () => {
     const result = calculateScore({ ...baseInput, savedPhraseCount: 0 });
     expect(result.savePhrasePoints).toBe(0);
   });
+
+  // ---------------------------------------------------------------------------
+  // Repeat reduction
+  // ---------------------------------------------------------------------------
+
+  it('applies repeat multiplier of 0.5 for repeated lessons', () => {
+    const result = calculateScore({ ...baseInput, completed: true, isRepeat: true });
+    expect(result.repeatMultiplier).toBe(0.5);
+    // Raw total = 15 (completion). After repeat: 15 * 0.5 = 7.5 → Math.round = 8
+    expect(result.totalBeforeMultiplier).toBe(8);
+    expect(result.totalScore).toBe(8); // beginner ×1.0
+  });
+
+  it('applies repeat reduction to phrase points', () => {
+    const phraseResults = DEMO_PHRASE_IDS.map((id) => ({
+      keyPhraseId: id,
+      expectedText: 'text',
+      typedText: 'text',
+      attemptNumber: 1,
+      correct: true,
+    }));
+
+    const result = calculateScore({
+      ...baseInput,
+      phraseResults,
+      isRepeat: true,
+    });
+    // Raw: 60 (accuracy) + 20 (recall) + 15 (completion) = 95
+    // With repeat ×0.5: 47.5 → Math.round = 48
+    expect(result.repeatMultiplier).toBe(0.5);
+    expect(result.totalBeforeMultiplier).toBe(48);
+    expect(result.totalScore).toBe(48);
+  });
+
+  it('repeat multiplier is 1.0 for non-repeat lessons', () => {
+    const result = calculateScore({ ...baseInput, isRepeat: false });
+    expect(result.repeatMultiplier).toBe(1.0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase-skip reduction
+  // ---------------------------------------------------------------------------
+
+  it('phaseCompletionMultiplier is 1.0 when all 4 phases completed', () => {
+    const result = calculateScore({ ...baseInput, completedPhases: 4 });
+    expect(result.phaseCompletionMultiplier).toBe(1.0);
+  });
+
+  it('phaseCompletionMultiplier is 0.75 when 3 of 4 phases completed', () => {
+    const result = calculateScore({ ...baseInput, completedPhases: 3 });
+    expect(result.phaseCompletionMultiplier).toBe(0.75);
+    // 15 (completion) * 0.75 = 11.25 → Math.round = 11
+    expect(result.totalBeforeMultiplier).toBe(11);
+  });
+
+  it('phaseCompletionMultiplier is 0.5 when 2 of 4 phases completed', () => {
+    const result = calculateScore({ ...baseInput, completedPhases: 2 });
+    expect(result.phaseCompletionMultiplier).toBe(0.5);
+    // 15 * 0.5 = 7.5 → Math.round = 8
+    expect(result.totalBeforeMultiplier).toBe(8);
+  });
+
+  it('phaseCompletionMultiplier is 0 when 0 phases completed', () => {
+    const result = calculateScore({ ...baseInput, completedPhases: 0, completed: false });
+    expect(result.phaseCompletionMultiplier).toBe(0);
+    expect(result.totalScore).toBe(0);
+  });
+
+  it('defaults completedPhases to 4 when not provided', () => {
+    const result = calculateScore({
+      ...baseInput,
+      completed: true,
+      // completedPhases not set — should default to 4
+    });
+    expect(result.phaseCompletionMultiplier).toBe(1.0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Combined penalties
+  // ---------------------------------------------------------------------------
+
+  it('applies both repeat and phase-skip reductions together', () => {
+    const phraseResults = DEMO_PHRASE_IDS.map((id) => ({
+      keyPhraseId: id,
+      expectedText: 'text',
+      typedText: 'text',
+      attemptNumber: 1,
+      correct: true,
+    }));
+
+    const result = calculateScore({
+      ...baseInput,
+      phraseResults,
+      isRepeat: true,          // ×0.5
+      completedPhases: 3,      // ×0.75
+    });
+    // Raw: 60 + 20 + 15 = 95
+    // 95 * 0.5 * 0.75 = 35.625 → Math.round = 36
+    expect(result.repeatMultiplier).toBe(0.5);
+    expect(result.phaseCompletionMultiplier).toBe(0.75);
+    expect(result.totalBeforeMultiplier).toBe(36);
+    expect(result.totalScore).toBe(36); // beginner ×1.0
+  });
 });

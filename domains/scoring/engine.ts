@@ -24,7 +24,7 @@ import type {
   LessonScoreResult,
   TypedPhraseResult,
 } from './types';
-import { SCORING } from './types';
+import { SCORING, REQUIRED_PHASES } from './types';
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -67,8 +67,15 @@ export function getDifficultyMultiplier(difficulty: Difficulty): number {
  * against seeded content before passing them here.
  */
 export function calculateScore(input: ScoreCalculationInput): LessonScoreResult {
-  const { difficulty, completed, phraseResults, savedPhraseCount, firstActivityToday, isRepeat } =
-    input;
+  const {
+    difficulty,
+    completed,
+    phraseResults,
+    savedPhraseCount,
+    firstActivityToday,
+    isRepeat,
+  } = input;
+  const completedPhases = input.completedPhases ?? REQUIRED_PHASES;
 
   // ---- Accuracy points (per-phrase typing) ----
   let accuracyPoints = 0;
@@ -102,15 +109,20 @@ export function calculateScore(input: ScoreCalculationInput): LessonScoreResult 
   const streakBonus =
     firstActivityToday && completed ? SCORING.DAILY_STREAK : 0;
 
-  // ---- Repeat reduction (not implemented for MVP demo conversion;
-  //      repeated lessons earn reduced points in full engine) ----
-  // For MVP demo conversion, isRepeat is always false.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _repeatReduction = isRepeat;
-
-  // ---- Total before multiplier ----
-  const totalBeforeMultiplier =
+  // ---- Total before penalties ----
+  const rawTotal =
     accuracyPoints + recallPoints + completionPoints + savePhrasePoints + streakBonus;
+
+  // ---- Repeat reduction (50 % for repeated lessons) ----
+  const repeatMultiplier = isRepeat ? 0.5 : 1.0;
+
+  // ---- Phase-skip reduction (proportional to completed phases) ----
+  const phaseCompletionMultiplier = Math.max(0, Math.min(1, completedPhases / REQUIRED_PHASES));
+
+  // ---- Apply penalties before difficulty multiplier ----
+  const totalBeforeMultiplier = Math.round(
+    rawTotal * repeatMultiplier * phaseCompletionMultiplier,
+  );
 
   // ---- Difficulty multiplier ----
   const multiplier = getDifficultyMultiplier(difficulty);
@@ -123,6 +135,8 @@ export function calculateScore(input: ScoreCalculationInput): LessonScoreResult 
     savePhrasePoints,
     streakBonus,
     difficultyMultiplier: multiplier,
+    repeatMultiplier,
+    phaseCompletionMultiplier,
     totalBeforeMultiplier,
     totalScore,
   };

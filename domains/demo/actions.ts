@@ -17,6 +17,12 @@ import { getCurrentUser } from '@/lib/supabase/auth';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { calculateScore } from '@/domains/scoring/engine';
 import type { TypedPhraseResult } from '@/domains/scoring/types';
+import { resolveLevelNumber } from '@/domains/gamification/levels';
+import { calculateStreak, todayDateString } from '@/domains/gamification/streaks';
+import { evaluateBadges } from '@/domains/gamification/badges';
+import type { BadgeEvaluationContext } from '@/domains/gamification/badges';
+import { evaluateMissions } from '@/domains/gamification/missions';
+import type { MissionProgressContext, UserMissionState } from '@/domains/gamification/missions';
 import {
   DEMO_SCENARIO_ID,
   validateConversionPayload,
@@ -66,6 +72,18 @@ export interface ConvertDemoProgressResult {
   lessonAttemptId?: string;
   score?: LessonScoreSummary;
   savedPhraseCount?: number;
+  /** XP awarded for this lesson. */
+  xpAwarded?: number;
+  /** Whether the user's streak was updated. */
+  streakUpdated?: boolean;
+  /** Badge codes newly awarded. */
+  newBadges?: string[];
+  /** Mission codes newly completed. */
+  completedMissions?: string[];
+  /** XP awarded from newly completed missions. */
+  missionXpAwarded?: number;
+  /** Total XP awarded (lesson XP + mission XP). */
+  totalXpAwarded?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +100,10 @@ export interface ConvertDemoProgressResult {
  * - Runs trusted score calculation server-side.
  * - Inserts lesson_attempt, phrase_attempts, pronunciation_attempts,
  *   and phrase_bank_items in a single atomic flow.
- * - Returns the lesson attempt ID, score result, and saved phrase count.
+ * - Awards XP, updates level and streak, records score events,
+ *   evaluates badges, and updates mission progress.
+ * - Returns the lesson attempt ID, score result, saved phrase count,
+ *   and gamification summary.
  */
 export async function convertDemoProgress(
   input: ConvertDemoProgressInput,
@@ -245,7 +266,260 @@ export async function convertDemoProgress(
     savedCount = count ?? input.savedPhraseIds.length;
   }
 
-  // 10. Return result
+  // 10. Update XP and level in user_profiles
+  const xpAwarded = score.totalScore;
+
+  const { data: currentProfile } = await supabase
+    .from('user_profiles')
+    .select('total_xp')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const currentXp = currentProfile?.total_xp ?? 0;
+  const newTotalXp = currentXp + xpAwarded;
+  const newLevelNumber = resolveLevelNumber(newTotalXp);
+
+  const { error: xpError } = await supabase
+    .from('user_profiles')
+    .upsert(
+      {
+        user_id: user.id,
+        total_xp: newTotalXp,
+        current_level_id: newLevelNumber,
+      },
+      { onConflict: 'user_id' },
+    );
+
+  if (xpError) {
+    return {
+      success: false,
+      error: `Failed to update XP: ${xpError.message}`,
+    };
+  }
+
+  // 11. Update streak
+  const today = todayDateString();
+  let streakUpdated = false;
+
+  const { data: currentStreak } = await supabase
+    .from('streaks')
+    .select('current_streak_days, longest_streak_days, last_practice_date')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const existing = currentStreak
+    ? {
+        currentStreakDays: currentStreak.current_streak_days,
+        longestStreakDays: currentStreak.longest_streak_days,
+        lastPracticeDate: currentStreak.last_practice_date,
+      }
+    : null;
+
+  const streakUpdate = calculateStreak(existing, today);
+  streakUpdated = streakUpdate.updated;
+
+  const { error: streakError } = await supabase.from('streaks').upsert(
+    {
+      user_id: user.id,
+      current_streak_days: streakUpdate.currentStreakDays,
+      longest_streak_days: streakUpdate.longestStreakDays,
+      last_practice_date: streakUpdate.lastPracticeDate,
+    },
+    { onConflict: 'user_id' },
+  );
+
+  if (streakError) {
+    return {
+      success: false,
+      error: `Failed to update streak: ${streakError.message}`,
+    };
+  }
+
+  // 12. Insert score_events for this lesson completion
+  const { error: scoreEventError } = await supabase.from('score_events').insert({
+    user_id: user.id,
+    lesson_attempt_id: lessonAttemptId,
+    event_type: 'lesson_completion',
+    points: xpAwarded,
+    metadata: {
+      accuracyPoints: score.accuracyPoints,
+      recallPoints: score.recallPoints,
+      completionPoints: score.completionPoints,
+      savePhrasePoints: score.savePhrasePoints,
+      streakBonus: score.streakBonus,
+      difficultyMultiplier: score.difficultyMultiplier,
+      repeatMultiplier: score.repeatMultiplier,
+      phaseCompletionMultiplier: score.phaseCompletionMultiplier,
+    },
+  });
+
+  if (scoreEventError) {
+    return {
+      success: false,
+      error: `Failed to record score event: ${scoreEventError.message}`,
+    };
+  }
+
+  // 13. Evaluate and award badges
+  const newBadges: string[] = [];
+  let missionXpAwarded = 0;
+  const completedMissions: string[] = [];
+
+  // Gather context data
+  const { count: totalLessonsCount } = await supabase
+    .from('lesson_attempts')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .eq('status', 'completed');
+
+  const totalLessonsCompleted = (totalLessonsCount ?? 0);
+
+  const { count: totalPhrasesSavedCount } = await supabase
+    .from('phrase_bank_items')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id);
+
+  const totalPhrasesSaved = (totalPhrasesSavedCount ?? 0);
+
+  const hasPronunciationAttempt = input.pronunciationAttempts.length > 0;
+
+  const perfectRecall =
+    phraseResults.length > 0 &&
+    phraseResults.every((r) => r.correct && r.attemptNumber === 1);
+
+  const badgeCtx: BadgeEvaluationContext = {
+    totalLessonsCompleted,
+    streakDays: streakUpdate.currentStreakDays,
+    perfectRecall,
+    totalPhrasesSaved,
+    hasPronunciationAttempt,
+    allPhasesCompleted: score.phaseCompletionMultiplier >= 1.0,
+    isFirstLesson: totalLessonsCompleted === 1,
+  };
+
+  // Fetch existing badge codes
+  const { data: existingBadges } = await supabase
+    .from('user_badges')
+    .select('badge_id, badges!inner(code)')
+    .eq('user_id', user.id);
+
+  const alreadyOwnedCodes = new Set<string>(
+    (existingBadges ?? []).map(
+      (row: unknown) => (row as { badges: { code: string } }).badges.code,
+    ),
+  );
+
+  const badgeResult = evaluateBadges(badgeCtx, alreadyOwnedCodes);
+
+  if (badgeResult.awardedCodes.length > 0) {
+    const { data: badgeRows } = await supabase
+      .from('badges')
+      .select('id, code')
+      .in('code', badgeResult.awardedCodes);
+
+    if (badgeRows && badgeRows.length > 0) {
+      const badgeInserts = badgeRows.map((b) => ({
+        user_id: user.id,
+        badge_id: b.id,
+      }));
+
+      const { error: badgeInsertError } = await supabase
+        .from('user_badges')
+        .insert(badgeInserts);
+
+      if (badgeInsertError) {
+        console.error('Failed to award badges:', badgeInsertError.message);
+      } else {
+        newBadges.push(...badgeResult.awardedCodes);
+      }
+    }
+  }
+
+  // 14. Evaluate and update mission progress
+  const missionCtx: MissionProgressContext = {
+    totalLessonsCompleted,
+    totalPhrasesSaved,
+    streakDays: streakUpdate.currentStreakDays,
+    perfectRecallAchieved: perfectRecall,
+  };
+
+  const { data: currentMissions } = await supabase
+    .from('user_missions')
+    .select('mission_id, progress_value, completed_at, missions!inner(code)')
+    .eq('user_id', user.id);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const currentStates = new Map<string, UserMissionState | null>();
+  for (const row of (currentMissions ?? [])) {
+    const missions = (row as { missions: unknown }).missions;
+    const code = (missions as { code: string }).code;
+    currentStates.set(code, {
+      missionCode: code,
+      progressValue: row.progress_value,
+      completedAt: row.completed_at,
+    });
+  }
+
+  const missionResult = evaluateMissions(missionCtx, currentStates);
+
+  for (const [code, progress] of missionResult.updatedProgress) {
+    const { data: missionRows } = await supabase
+      .from('missions')
+      .select('id')
+      .eq('code', code)
+      .single();
+
+    if (!missionRows) continue;
+
+    const isNewlyCompleted = missionResult.newlyCompleted.some(
+      (m) => m.code === code,
+    );
+
+    await supabase.from('user_missions').upsert(
+      {
+        user_id: user.id,
+        mission_id: missionRows.id,
+        progress_value: progress,
+        completed_at: isNewlyCompleted ? new Date().toISOString() : null,
+      },
+      { onConflict: 'user_id, mission_id' },
+    );
+  }
+
+  missionXpAwarded = missionResult.totalMissionXp;
+  if (missionXpAwarded > 0) {
+    await supabase.from('score_events').insert({
+      user_id: user.id,
+      lesson_attempt_id: lessonAttemptId,
+      event_type: 'mission_bonus',
+      points: missionXpAwarded,
+      metadata: {
+        completedMissions: missionResult.newlyCompleted.map((m) => m.code),
+      },
+    });
+
+    const newTotalWithMissions = newTotalXp + missionXpAwarded;
+    const newLevelWithMissions = resolveLevelNumber(newTotalWithMissions);
+
+    await supabase
+      .from('user_profiles')
+      .upsert(
+        {
+          user_id: user.id,
+          total_xp: newTotalWithMissions,
+          current_level_id: newLevelWithMissions,
+        },
+        { onConflict: 'user_id' },
+      );
+
+    completedMissions.push(
+      ...missionResult.newlyCompleted.map((m) => m.code),
+    );
+  }
+
+  // 15. Return result
+  const totalXpAwarded = xpAwarded + missionXpAwarded;
+
   return {
     success: true,
     lessonAttemptId,
@@ -262,5 +536,11 @@ export async function convertDemoProgress(
       totalScore: score.totalScore,
     },
     savedPhraseCount: savedCount,
+    xpAwarded,
+    streakUpdated,
+    newBadges: newBadges.length > 0 ? newBadges : undefined,
+    completedMissions: completedMissions.length > 0 ? completedMissions : undefined,
+    missionXpAwarded: missionXpAwarded > 0 ? missionXpAwarded : undefined,
+    totalXpAwarded: totalXpAwarded > 0 ? totalXpAwarded : undefined,
   };
 }

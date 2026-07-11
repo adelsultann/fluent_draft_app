@@ -21,6 +21,8 @@ import { getScenarioDbId, getPhraseDbId } from '@/domains/scenarios/db-ids';
 import { isExactMatch } from '@/domains/scoring/engine';
 import { calculateScore } from '@/domains/scoring/engine';
 import type { TypedPhraseResult, LessonScoreResult } from '@/domains/scoring/types';
+import { resolveLevelNumber } from '@/domains/gamification/levels';
+import { calculateStreak, todayDateString } from '@/domains/gamification/streaks';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbClient = SupabaseClient<any>;
@@ -57,6 +59,10 @@ export interface CompleteLessonResult {
   recallTotal?: number;
   /** Trusted server-calculated score breakdown. */
   score?: LessonScoreResult;
+  /** XP awarded for this lesson (equals totalScore). */
+  xpAwarded?: number;
+  /** Whether the user's streak was updated (incremented or started). */
+  streakUpdated?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +255,78 @@ export async function completeLesson(
     savedCount = count ?? validSavedOrders.length;
   }
 
-  // 10. Return result
+  // 10. Update XP and level in user_profiles
+  const xpAwarded = score.totalScore;
+  let streakUpdated = false;
+
+  // Fetch current profile for total_xp
+  const { data: currentProfile } = await supabase
+    .from('user_profiles')
+    .select('total_xp')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const currentXp = currentProfile?.total_xp ?? 0;
+  const newTotalXp = currentXp + xpAwarded;
+  const newLevelNumber = resolveLevelNumber(newTotalXp);
+
+  const { error: xpError } = await supabase
+    .from('user_profiles')
+    .upsert(
+      {
+        user_id: user.id,
+        total_xp: newTotalXp,
+        current_level_id: newLevelNumber,
+      },
+      { onConflict: 'user_id' },
+    );
+
+  if (xpError) {
+    return {
+      success: false,
+      error: `Failed to update XP: ${xpError.message}`,
+    };
+  }
+
+  // 11. Update streak
+  const today = todayDateString();
+
+  // Fetch current streak row
+  const { data: currentStreak } = await supabase
+    .from('streaks')
+    .select('current_streak_days, longest_streak_days, last_practice_date')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const existing = currentStreak
+    ? {
+        currentStreakDays: currentStreak.current_streak_days,
+        longestStreakDays: currentStreak.longest_streak_days,
+        lastPracticeDate: currentStreak.last_practice_date,
+      }
+    : null;
+
+  const update = calculateStreak(existing, today);
+  streakUpdated = update.updated;
+
+  const { error: streakError } = await supabase.from('streaks').upsert(
+    {
+      user_id: user.id,
+      current_streak_days: update.currentStreakDays,
+      longest_streak_days: update.longestStreakDays,
+      last_practice_date: update.lastPracticeDate,
+    },
+    { onConflict: 'user_id' },
+  );
+
+  if (streakError) {
+    return {
+      success: false,
+      error: `Failed to update streak: ${streakError.message}`,
+    };
+  }
+
+  // 12. Return result
   return {
     success: true,
     lessonAttemptId,
@@ -258,6 +335,8 @@ export async function completeLesson(
     practiceTotal,
     recallCorrect,
     recallTotal,
+    xpAwarded,
+    streakUpdated,
     score: {
       accuracyPoints: score.accuracyPoints,
       recallPoints: score.recallPoints,

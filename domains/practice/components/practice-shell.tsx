@@ -284,6 +284,8 @@ function PracticePhase({
   // Speech recognition
   const {
     supported: recogSupported,
+    microphoneDenied,
+    errorType: recogErrorType,
     status: pronStatus,
     transcript,
     start: startRecognition,
@@ -455,7 +457,7 @@ function PracticePhase({
         )}
 
         {/* Pronounce */}
-        {recogSupported ? (
+        {recogSupported && !microphoneDenied ? (
           <Button
             variant="secondary"
             size="sm"
@@ -487,7 +489,7 @@ function PracticePhase({
               </>
             )}
           </Button>
-        ) : (
+        ) : !recogSupported ? (
           <Button
             variant="secondary"
             size="sm"
@@ -500,8 +502,63 @@ function PracticePhase({
             </svg>
             Pronounce unavailable
           </Button>
+        ) : (
+          /* microphoneDenied === true — show disabled button */
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled
+            title="Microphone access was denied. Enable it in your browser settings to use pronunciation practice."
+            className="flex items-center gap-1.5"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+            </svg>
+            Microphone blocked
+          </Button>
         )}
       </div>
+
+      {/* Unsupported browser info banner */}
+      {!recogSupported && (
+        <div className="rounded-md border border-phrase/30 bg-phrase/5 px-4 py-3">
+          <p className="text-sm font-medium text-phrase">
+            Speech recognition is not supported in this browser
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            Pronunciation practice requires a browser that supports the Web Speech API
+            (Chrome, Edge, or Safari). You can skip pronunciation and continue the
+            lesson normally — all other features are available.
+          </p>
+        </div>
+      )}
+
+      {/* Microphone denied info banner */}
+      {microphoneDenied && (
+        <div className="rounded-md border border-phrase/30 bg-phrase/5 px-4 py-3">
+          <p className="text-sm font-medium text-phrase">
+            Microphone access was denied
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            To use pronunciation practice, please enable microphone access in your
+            browser settings and reload the page. You can skip pronunciation and
+            continue the lesson — typing practice is unaffected.
+          </p>
+        </div>
+      )}
+
+      {/* Network / other recognition error */}
+      {recogSupported && !microphoneDenied && recogErrorType === 'network' && (
+        <div className="rounded-md border border-error/30 bg-error/5 px-4 py-3">
+          <p className="text-sm font-medium text-error">
+            Speech recognition network error
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            A network error occurred during speech recognition. Please check your
+            connection and try again, or skip pronunciation and continue.
+          </p>
+        </div>
+      )}
 
       {/* Pronunciation feedback */}
       {pronResult === 'passed' && (

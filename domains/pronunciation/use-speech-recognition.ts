@@ -7,8 +7,9 @@
  * MVP pronunciation practice.  Captures transcripts and returns
  * pass/retry/unsupported status.
  *
- * Gracefully handles unsupported browsers by returning an inert state.
- * Isolated under domains/pronunciation for future paid-API upgrade.
+ * Handles unsupported browsers, microphone denial, and network
+ * errors with user-facing statuses.  Isolated under
+ * domains/pronunciation for future paid-API upgrade.
  *
  * Related docs:
  *   - docs/system-design.md § Pronunciation Design
@@ -22,16 +23,28 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 // Types
 // ---------------------------------------------------------------------------
 
-export type PronunciationStatus = 'idle' | 'listening' | 'passed' | 'retry' | 'unsupported';
+export type RecognitionErrorType = 'none' | 'not-allowed' | 'network' | 'other';
+
+export type PronunciationStatus =
+  | 'idle'
+  | 'listening'
+  | 'passed'
+  | 'retry'
+  | 'unsupported'
+  | 'denied';
 
 export interface RecognitionState {
   /** Whether the Web Speech Recognition API is available. */
   supported: boolean;
+  /** Whether the user denied microphone access. */
+  microphoneDenied: boolean;
+  /** The type of the last recognition error (for fallback messages). */
+  errorType: RecognitionErrorType;
   /** Current recognition status. */
   status: PronunciationStatus;
   /** The captured transcript (empty until recording stops). */
   transcript: string;
-  /** Start listening for speech. No‑op when unsupported. */
+  /** Start listening for speech. No‑op when unsupported / denied. */
   start: () => void;
   /** Stop listening and evaluate the transcript. */
   stop: () => void;
@@ -63,14 +76,8 @@ export function checkPronunciation(transcript: string, expected: string): boolea
   const normTranscript = normalize(transcript);
   const normExpected = normalize(expected);
 
-  // Exact match after normalization
   if (normTranscript === normExpected) return true;
-
-  // Also check if the expected text is fully contained in the transcript
-  // (speech recognition sometimes captures extra words)
   if (normTranscript.includes(normExpected)) return true;
-
-  // Or if the transcript is substantially contained in expected
   if (normExpected.includes(normTranscript) && normTranscript.length > normExpected.length * 0.5) {
     return true;
   }
@@ -97,8 +104,8 @@ function getRecognitionConstructor(): SpeechRecognitionConstructor | null {
  * Returns a recognition-state object for driving Record/Stop buttons.
  *
  * - Automatically stops recognition on unmount.
+ * - Detects `not-allowed` (microphone denied) errors explicitly.
  * - Returns `supported: false` when the API is unavailable.
- * - Microphone denial is NOT explicitly detected (Task 35).
  */
 export function useSpeechRecognition(): RecognitionState {
   const [RecognitionCtor] = useState(() => getRecognitionConstructor());
@@ -108,7 +115,10 @@ export function useSpeechRecognition(): RecognitionState {
     RecognitionCtor ? 'idle' : 'unsupported',
   );
   const [transcript, setTranscript] = useState('');
+  const [errorType, setErrorType] = useState<RecognitionErrorType>('none');
   const recognitionRef = useRef<InstanceType<SpeechRecognitionConstructor> | null>(null);
+
+  const microphoneDenied = errorType === 'not-allowed';
 
   // Cleanup on unmount
   useEffect(() => {
@@ -138,9 +148,18 @@ export function useSpeechRecognition(): RecognitionState {
       }
     };
 
-    instance.onerror = () => {
-      // Microphone denied or network error — treat as retryable
-      setStatus('idle');
+    instance.onerror = (event: { error: string }) => {
+      if (event.error === 'not-allowed') {
+        setErrorType('not-allowed');
+        setStatus('denied');
+      } else if (event.error === 'network') {
+        setErrorType('network');
+        setStatus('idle');
+      } else {
+        setErrorType('other');
+        setStatus('idle');
+      }
+      recognitionRef.current = null;
     };
 
     instance.onend = () => {
@@ -150,6 +169,7 @@ export function useSpeechRecognition(): RecognitionState {
     instance.start();
     recognitionRef.current = instance;
     setTranscript('');
+    setErrorType('none');
     setStatus('listening');
   }, [RecognitionCtor]);
 
@@ -159,11 +179,12 @@ export function useSpeechRecognition(): RecognitionState {
       rec.stop();
       recognitionRef.current = null;
     }
-    // Status is set by the caller after evaluating the transcript
   }, []);
 
   return {
     supported,
+    microphoneDenied,
+    errorType,
     status,
     transcript,
     start,

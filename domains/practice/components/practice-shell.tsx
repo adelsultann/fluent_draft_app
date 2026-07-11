@@ -15,10 +15,16 @@
  *   - docs/style-guide.md § Practice Screen Guidance
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { SeedKeyPhrase, SeedChunk, SeedTranslation, SeedRecallBlank } from '@/domains/scenarios/seed-schema';
 import { isExactMatch } from '@/domains/scoring/engine';
 import { Badge, Card, Button, Progress } from '@/components/ui';
+import { completeLesson } from '@/domains/practice/actions';
+import type {
+  CompleteLessonInput,
+  CompleteLessonResult,
+  PracticeAttemptInput as ServerPracticeAttemptInput,
+} from '@/domains/practice/actions';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -901,22 +907,28 @@ function RecallPhase({
   );
 }
 
-/** Review/Save phase — review mistakes, save key phrases, see summary. */
+/** Review/Save phase — review mistakes, save key phrases, persist lesson. */
 function ReviewSavePhase({
   scenario,
   practiceResults,
   recallResults,
+  scenarioSlug,
 }: {
   scenario: PracticeScenarioMeta;
   practiceResults: PracticeAttemptResults | null;
   recallResults: RecallAttemptResults | null;
+  scenarioSlug: string;
 }) {
   const sortedPhrases = [...scenario.keyPhrases].sort((a, b) => a.order - b.order);
   const [savedPhraseOrders, setSavedPhraseOrders] = useState<Set<number>>(() => {
-    // Pre-select all phrases as saved by default
     return new Set(sortedPhrases.map((p) => p.order));
   });
-  const [finished, setFinished] = useState(false);
+  const [persistState, setPersistState] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
+  const [persistError, setPersistError] = useState<string | null>(null);
+  const [result, setResult] = useState<CompleteLessonResult | null>(null);
+  const savingRef = useRef(false);
 
   const toggleSave = (order: number) => {
     setSavedPhraseOrders((prev) => {
@@ -935,31 +947,98 @@ function ReviewSavePhase({
   const totalAttempts =
     (practiceResults?.totalAttempts ?? 0) + (recallResults?.totalAttempts ?? 0);
 
-  if (finished) {
+  // ---- Persist lesson ----
+  const handleFinish = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setPersistState('saving');
+    setPersistError(null);
+
+    // Build server-side attempt inputs from phase results
+    const typedPracticeAttempts: ServerPracticeAttemptInput[] =
+      practiceResults?.mistakes?.map((m) => ({
+        typedText: m.text,
+        expectedText: m.text, // overwritten server-side
+        attemptNumber: m.attempts,
+        phraseOrder: m.chunkOrder,
+      })) ?? [];
+
+    const typedRecallAttempts: ServerPracticeAttemptInput[] =
+      recallResults?.mistakes?.map((m) => ({
+        typedText: m.text,
+        expectedText: m.text,
+        attemptNumber: m.attempts,
+        phraseOrder: m.phraseOrder,
+      })) ?? [];
+
+    const input: CompleteLessonInput = {
+      scenarioSlug,
+      typedPracticeAttempts,
+      typedRecallAttempts,
+      savedPhraseOrders: Array.from(savedPhraseOrders),
+      reviewedMistakes: true,
+    };
+
+    try {
+      const res = await completeLesson(input);
+      setResult(res);
+      if (res.success) {
+        setPersistState('saved');
+      } else {
+        setPersistState('error');
+        setPersistError(res.error ?? 'An unknown error occurred.');
+      }
+    } catch (err) {
+      setPersistState('error');
+      setPersistError(err instanceof Error ? err.message : 'Persistence failed.');
+    } finally {
+      savingRef.current = false;
+    }
+  };
+
+  // ---- Saved state ----
+  if (persistState === 'saved') {
     return (
       <Card className="flex min-h-[400px] flex-col items-center justify-center text-center">
         <div className="max-w-md space-y-3">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
             <svg
               className="h-6 w-6 text-success"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
             </svg>
           </div>
           <h3 className="text-lg font-semibold text-primary">Lesson Complete!</h3>
           <p className="text-sm text-text-muted">
-            Great work! You completed the full practice lesson.
-            In a future update, your progress will be saved to your account
-            and contribute to your leaderboard ranking.
+            Your progress has been saved to your account.
           </p>
-          <p className="text-xs text-text-muted">
-            {savedPhraseOrders.size} phrase{savedPhraseOrders.size !== 1 ? 's' : ''} selected
-            to save · Score calculation coming soon
-          </p>
+          <div className="grid grid-cols-3 gap-2 pt-2">
+            <div className="rounded-md border border-border bg-background p-2 text-center">
+              <p className="text-sm font-semibold text-action">
+                {result?.practiceCorrect ?? 0}/{result?.practiceTotal ?? 0}
+              </p>
+              <p className="text-[11px] text-text-muted">Chunks</p>
+            </div>
+            <div className="rounded-md border border-border bg-background p-2 text-center">
+              <p className="text-sm font-semibold text-action">
+                {result?.recallCorrect ?? 0}/{result?.recallTotal ?? 0}
+              </p>
+              <p className="text-[11px] text-text-muted">Phrases</p>
+            </div>
+            <div className="rounded-md border border-border bg-background p-2 text-center">
+              <p className="text-sm font-semibold text-action">
+                {result?.savedPhraseCount ?? 0}
+              </p>
+              <p className="text-[11px] text-text-muted">Saved</p>
+            </div>
+          </div>
+          <a
+            href="/dashboard"
+            className="inline-block rounded-md bg-action px-6 py-2.5 text-sm font-medium text-white hover:bg-action/90 transition-colors"
+          >
+            Go to Dashboard
+          </a>
         </div>
       </Card>
     );
@@ -976,53 +1055,38 @@ function ReviewSavePhase({
       </div>
 
       {/* ---- Mistakes section ---- */}
+      {/* ... same as before ... */}
       {(practiceResults?.mistakes?.length ?? 0) > 0 ||
       (recallResults?.mistakes?.length ?? 0) > 0 ? (
         <Card>
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-error">
             Mistakes to review
           </h3>
-
-          {/* Practice mistakes */}
           {practiceResults?.mistakes && practiceResults.mistakes.length > 0 && (
             <div className="mb-4">
               <p className="text-xs font-medium text-text-muted">
-                Practice phase ({practiceResults.mistakes.length} chunk
-                {practiceResults.mistakes.length !== 1 ? 's' : ''} needed retries)
+                Practice phase ({practiceResults.mistakes.length} chunk{practiceResults.mistakes.length !== 1 ? 's' : ''} needed retries)
               </p>
               <div className="mt-2 space-y-2">
                 {practiceResults.mistakes.map((m) => (
-                  <div
-                    key={`p-${m.chunkOrder}`}
-                    className="rounded-md border border-error/20 bg-error/5 px-3 py-2"
-                  >
+                  <div key={`p-${m.chunkOrder}`} className="rounded-md border border-error/20 bg-error/5 px-3 py-2">
                     <p className="text-sm text-text">{m.text}</p>
-                    <p className="mt-0.5 text-xs text-error">
-                      Took {m.attempts} attempt{m.attempts !== 1 ? 's' : ''}
-                    </p>
+                    <p className="mt-0.5 text-xs text-error">Took {m.attempts} attempt{m.attempts !== 1 ? 's' : ''}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
-          {/* Recall mistakes */}
           {recallResults?.mistakes && recallResults.mistakes.length > 0 && (
             <div>
               <p className="text-xs font-medium text-text-muted">
-                Recall phase ({recallResults.mistakes.length} phrase
-                {recallResults.mistakes.length !== 1 ? 's' : ''} needed retries)
+                Recall phase ({recallResults.mistakes.length} phrase{recallResults.mistakes.length !== 1 ? 's' : ''} needed retries)
               </p>
               <div className="mt-2 space-y-2">
                 {recallResults.mistakes.map((m) => (
-                  <div
-                    key={`r-${m.phraseOrder}`}
-                    className="rounded-md border border-error/20 bg-error/5 px-3 py-2"
-                  >
+                  <div key={`r-${m.phraseOrder}`} className="rounded-md border border-error/20 bg-error/5 px-3 py-2">
                     <p className="text-sm font-medium text-text">{m.text}</p>
-                    <p className="mt-0.5 text-xs text-error">
-                      Took {m.attempts} attempt{m.attempts !== 1 ? 's' : ''}
-                    </p>
+                    <p className="mt-0.5 text-xs text-error">Took {m.attempts} attempt{m.attempts !== 1 ? 's' : ''}</p>
                   </div>
                 ))}
               </div>
@@ -1032,60 +1096,34 @@ function ReviewSavePhase({
       ) : (
         <Card>
           <div className="text-center">
-            <svg
-              className="mx-auto h-8 w-8 text-success"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
+            <svg className="mx-auto h-8 w-8 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
             </svg>
             <p className="mt-2 text-sm font-medium text-success">No mistakes — perfect run!</p>
-            <p className="mt-1 text-xs text-text-muted">
-              All chunks and phrases were answered correctly.
-            </p>
+            <p className="mt-1 text-xs text-text-muted">All chunks and phrases were answered correctly.</p>
           </div>
         </Card>
       )}
 
       {/* ---- Key phrases to save ---- */}
       <Card>
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
-          Save useful phrases
-        </h3>
-        <p className="mb-3 text-xs text-text-muted">
-          Select phrases to keep in your Phrase Bank for later review.
-        </p>
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">Save useful phrases</h3>
+        <p className="mb-3 text-xs text-text-muted">Select phrases to keep in your Phrase Bank for later review.</p>
         <div className="space-y-2">
           {sortedPhrases.map((phrase) => (
             <label
               key={phrase.order}
               className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-3 transition-colors ${
-                savedPhraseOrders.has(phrase.order)
-                  ? 'border-phrase/40 bg-phrase/5'
-                  : 'border-border bg-surface hover:bg-background'
+                savedPhraseOrders.has(phrase.order) ? 'border-phrase/40 bg-phrase/5' : 'border-border bg-surface hover:bg-background'
               }`}
             >
-              <input
-                type="checkbox"
-                checked={savedPhraseOrders.has(phrase.order)}
-                onChange={() => toggleSave(phrase.order)}
-                className="mt-0.5 h-4 w-4 rounded border-border text-action focus:ring-action"
-              />
+              <input type="checkbox" checked={savedPhraseOrders.has(phrase.order)} onChange={() => toggleSave(phrase.order)}
+                className="mt-0.5 h-4 w-4 rounded border-border text-action focus:ring-action" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-phrase">{phrase.text}</p>
                 <p className="mt-0.5 text-xs text-text-muted">{phrase.meaning}</p>
-                {phrase.example && (
-                  <p className="mt-0.5 text-xs italic text-text-muted">
-                    e.g. {phrase.example}
-                  </p>
-                )}
-                {phrase.commonMistake && (
-                  <p className="mt-0.5 text-xs text-error">
-                    <span className="font-medium">Watch out:</span> {phrase.commonMistake}
-                  </p>
-                )}
+                {phrase.example && <p className="mt-0.5 text-xs italic text-text-muted">e.g. {phrase.example}</p>}
+                {phrase.commonMistake && <p className="mt-0.5 text-xs text-error"><span className="font-medium">Watch out:</span> {phrase.commonMistake}</p>}
               </div>
             </label>
           ))}
@@ -1094,20 +1132,14 @@ function ReviewSavePhase({
 
       {/* ---- Learning summary ---- */}
       <Card>
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
-          Learning summary
-        </h3>
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">Learning summary</h3>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-md border border-border bg-background p-3 text-center">
-            <p className="text-lg font-semibold text-action">
-              {practiceCorrect}/{practiceTotal}
-            </p>
+            <p className="text-lg font-semibold text-action">{practiceCorrect}/{practiceTotal}</p>
             <p className="text-xs text-text-muted">Chunks correct</p>
           </div>
           <div className="rounded-md border border-border bg-background p-3 text-center">
-            <p className="text-lg font-semibold text-action">
-              {recallCorrect}/{recallTotal}
-            </p>
+            <p className="text-lg font-semibold text-action">{recallCorrect}/{recallTotal}</p>
             <p className="text-xs text-text-muted">Phrases correct</p>
           </div>
           <div className="rounded-md border border-border bg-background p-3 text-center">
@@ -1116,15 +1148,29 @@ function ReviewSavePhase({
           </div>
           <div className="rounded-md border border-border bg-background p-3 text-center">
             <p className="text-lg font-semibold text-action">{savedPhraseOrders.size}</p>
-            <p className="text-xs text-text-muted">Phrases saved</p>
+            <p className="text-xs text-text-muted">Phrases to save</p>
           </div>
         </div>
       </Card>
 
+      {/* ---- Error state ---- */}
+      {persistState === 'error' && (
+        <div className="rounded-md border border-error/30 bg-error/10 px-4 py-3">
+          <p className="text-sm font-medium text-error">Could not save lesson</p>
+          <p className="mt-1 text-xs text-text-muted">{persistError ?? 'An unexpected error occurred.'}</p>
+          <p className="mt-1 text-xs text-text-muted">Your progress is still available — you can try again.</p>
+        </div>
+      )}
+
       {/* ---- Finish action ---- */}
       <div className="flex justify-end">
-        <Button variant="primary" size="lg" onClick={() => setFinished(true)}>
-          Finish Lesson
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={handleFinish}
+          disabled={persistState === 'saving'}
+        >
+          {persistState === 'saving' ? 'Saving…' : 'Finish Lesson'}
         </Button>
       </div>
     </div>
@@ -1279,6 +1325,7 @@ export default function PracticeShell({ scenario }: PracticeShellProps) {
               scenario={scenario}
               practiceResults={practiceResults}
               recallResults={recallResults}
+              scenarioSlug={scenario.scenarioId}
             />
           )}
         </div>

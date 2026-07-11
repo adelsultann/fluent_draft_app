@@ -17,6 +17,7 @@
 
 import { useState, useCallback } from 'react';
 import type { SeedKeyPhrase, SeedChunk, SeedTranslation } from '@/domains/scenarios/seed-schema';
+import { isExactMatch } from '@/domains/scoring/engine';
 import { Badge, Card, Button, Progress } from '@/components/ui';
 
 // ---------------------------------------------------------------------------
@@ -238,6 +239,10 @@ function PracticePhase({
   const [revealedTranslations, setRevealedTranslations] = useState<Set<number>>(
     () => new Set(),
   );
+  // Exact checking state
+  const [checkedChunks, setCheckedChunks] = useState<Set<number>>(() => new Set());
+  const [attemptCounts, setAttemptCounts] = useState<Record<number, number>>({});
+  const [feedback, setFeedback] = useState<Record<number, 'idle' | 'correct' | 'retry'>>({});
 
   const currentChunk = sortedChunks[currentIndex];
   if (!currentChunk) return null;
@@ -251,6 +256,31 @@ function PracticePhase({
     currentChunk.order,
   );
   const isTranslationRevealed = revealedTranslations.has(currentChunk.order);
+
+  // Checking
+  const isChecked = checkedChunks.has(currentChunk.order);
+  const currentFeedback = feedback[currentChunk.order] ?? 'idle';
+  const currentAttempts = attemptCounts[currentChunk.order] ?? 0;
+  const canAdvance = isChecked;
+
+  const handleCheck = () => {
+    const trimmed = currentTyped.trim();
+    if (!trimmed) return; // ignore empty checks
+
+    const attemptNum = currentAttempts + 1;
+    setAttemptCounts((prev) => ({ ...prev, [currentChunk.order]: attemptNum }));
+
+    if (isExactMatch(trimmed, currentChunk.text)) {
+      setCheckedChunks((prev) => {
+        const next = new Set(prev);
+        next.add(currentChunk.order);
+        return next;
+      });
+      setFeedback((prev) => ({ ...prev, [currentChunk.order]: 'correct' }));
+    } else {
+      setFeedback((prev) => ({ ...prev, [currentChunk.order]: 'retry' }));
+    }
+  };
 
   // Chunk navigation
   const goNext = () => {
@@ -412,15 +442,74 @@ function PracticePhase({
           id="practice-typing-area"
           rows={4}
           value={currentTyped}
-          onChange={(e) => updateDraft(e.target.value)}
+          onChange={(e) => {
+            updateDraft(e.target.value);
+            // Clear per-chunk feedback when user edits
+            if (currentFeedback !== 'idle') {
+              setFeedback((prev) => ({ ...prev, [currentChunk.order]: 'idle' }));
+            }
+          }}
           placeholder="Type the chunk exactly as shown above…"
-          className="w-full rounded-md border border-border bg-surface px-4 py-3 text-sm text-text placeholder:text-text-muted/60 focus:border-action focus:outline-none focus:ring-1 focus:ring-action"
+          disabled={isChecked}
+          className={`w-full rounded-md border px-4 py-3 text-sm placeholder:text-text-muted/60 focus:outline-none focus:ring-1 ${
+            isChecked
+              ? 'border-success/40 bg-success/5 text-text'
+              : currentFeedback === 'retry'
+                ? 'border-error/40 bg-error/5 text-text focus:border-action focus:ring-action'
+                : 'border-border bg-surface text-text focus:border-action focus:ring-action'
+          }`}
         />
+
+        {/* Helper text */}
         <p className="mt-2 text-xs text-text-muted">
           <span className="font-medium text-phrase">Exact match required:</span>{' '}
           Capitalization, punctuation, and spacing must match exactly.
-          Checking will be available in a future update.
+          {!isChecked && ' Type the chunk and click Check Answer.'}
         </p>
+
+        {/* Check button */}
+        {!isChecked && (
+          <div className="mt-3">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleCheck}
+              disabled={currentTyped.trim().length === 0}
+            >
+              Check Answer
+            </Button>
+          </div>
+        )}
+
+        {/* Feedback */}
+        {currentFeedback === 'correct' && (
+          <div className="mt-3 rounded-md border border-success/30 bg-success/10 px-4 py-3">
+            <p className="text-sm font-medium text-success">
+              ✓ Correct!
+              {currentAttempts === 1
+                ? ' (first try)'
+                : ` (after ${currentAttempts} ${currentAttempts === 1 ? 'attempt' : 'attempts'})`}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              Great work — this chunk is complete. You can now move to the next one.
+            </p>
+          </div>
+        )}
+
+        {currentFeedback === 'retry' && (
+          <div className="mt-3 rounded-md border border-error/30 bg-error/10 px-4 py-3">
+            <p className="text-sm font-medium text-error">
+              ✗ Not quite — try again
+              {currentAttempts > 1 && (
+                <span className="font-normal"> (attempt {currentAttempts})</span>
+              )}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              Your answer does not match the expected text exactly.
+              Check your capitalization, punctuation, and spacing.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}
@@ -439,11 +528,23 @@ function PracticePhase({
         </span>
 
         {isLast ? (
-          <Button variant="primary" size="sm" onClick={onComplete}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onComplete}
+            disabled={!canAdvance}
+            title={!canAdvance ? 'Check your answer before continuing' : undefined}
+          >
             Continue to Recall →
           </Button>
         ) : (
-          <Button variant="secondary" size="sm" onClick={goNext}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={goNext}
+            disabled={!canAdvance}
+            title={!canAdvance ? 'Check your answer before continuing' : undefined}
+          >
             Next →
           </Button>
         )}

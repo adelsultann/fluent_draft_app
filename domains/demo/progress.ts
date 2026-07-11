@@ -76,3 +76,21 @@ export function clearProgress(scenarioSlug: string): void {
     // ignore
   }
 }
+
+/**
+ * Returns `true` when the user has meaningful unsaved progress.
+ *
+ * Midway means:
+ * - Not completed, AND
+ * - Moved beyond the initial Understand phase, OR
+ * - Viewed at least one chunk, OR
+ * - Revealed at least one recall answer.
+ */
+export function isMidway(progress: DemoProgress): boolean {
+  if (progress.completed) return false;
+  return (
+    progress.currentPhase !== 'understand' ||
+    progress.completedChunkOrders.length > 0 ||
+    progress.completedPhraseOrders.length > 0
+  );
+}

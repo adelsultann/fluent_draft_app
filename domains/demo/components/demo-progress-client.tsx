@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import type { SeedScenario, SeedKeyPhrase } from '@/domains/scenarios/seed-schema';
 import {
   type DemoProgress,
@@ -8,8 +9,10 @@ import {
   loadProgress,
   saveProgress,
   clearProgress,
+  isMidway,
 } from '../progress';
 import { Button, Badge } from '@/components/ui';
+import Modal from '@/components/ui/modal';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -53,7 +56,9 @@ function ProgressBar({ done, total }: { done: number; total: number }) {
 // ---------------------------------------------------------------------------
 
 export default function DemoProgressClient({ scenario }: DemoProgressClientProps) {
+  const router = useRouter();
   const [progress, setProgress] = useState<DemoProgress | null>(null);
+  const [showExitModal, setShowExitModal] = useState(false);
   const mounted = useRef(false);
 
   // Hydrate from localStorage on the client after mount.
@@ -67,6 +72,18 @@ export default function DemoProgressClient({ scenario }: DemoProgressClientProps
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProgress(stored);
   }, [scenario.slug]);
+
+  // Browser tab-close / refresh warning when progress is midway.
+  useEffect(() => {
+    if (!progress) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isMidway(progress)) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [progress]);
 
   // Persist whenever progress changes (after initial hydration).
   const update = useCallback(
@@ -105,9 +122,24 @@ export default function DemoProgressClient({ scenario }: DemoProgressClientProps
             <span>{scenario.difficulty}</span>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={handleReset}>
-          Reset
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (isMidway(progress)) {
+                setShowExitModal(true);
+              } else {
+                router.push('/demo');
+              }
+            }}
+            className="text-xs text-text-muted hover:text-text transition-colors"
+          >
+            ← Back to demo
+          </button>
+          <Button variant="ghost" size="sm" onClick={handleReset}>
+            Reset
+          </Button>
+        </div>
       </div>
 
       {/* Phase progress bar */}
@@ -163,6 +195,47 @@ export default function DemoProgressClient({ scenario }: DemoProgressClientProps
       <div className="rounded-md border border-phrase/30 bg-phrase/5 px-4 py-3 text-center text-xs text-text-muted">
         Demo progress is saved only in this browser. Sign up to save your progress permanently.
       </div>
+
+      {/* Exit warning modal */}
+      <Modal
+        open={showExitModal}
+        onClose={() => setShowExitModal(false)}
+        title="Leave demo?"
+        description="Your demo progress is saved only in this browser and may be lost if you leave now."
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-text-muted">
+            You have made progress in this demo lesson. If you leave now, your progress and
+            score will <strong>not</strong> be saved permanently.
+          </p>
+          <p className="text-sm text-text-muted">
+            Sign up to save your progress, compete on leaderboards, and unlock all lessons.
+          </p>
+          <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+            <Button
+              variant="secondary"
+              onClick={() => setShowExitModal(false)}
+              className="flex-1"
+            >
+              Keep practicing
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/demo')}
+              className="flex-1"
+            >
+              Leave anyway
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => router.push('/signup')}
+              className="flex-1"
+            >
+              Sign up to save
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

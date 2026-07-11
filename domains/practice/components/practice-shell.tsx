@@ -21,6 +21,10 @@ import { isExactMatch } from '@/domains/scoring/engine';
 import { Badge, Card, Button, Progress } from '@/components/ui';
 import { completeLesson } from '@/domains/practice/actions';
 import { useSpeechSynthesis } from '@/domains/pronunciation/use-speech-synthesis';
+import {
+  useSpeechRecognition,
+  checkPronunciation,
+} from '@/domains/pronunciation/use-speech-recognition';
 import type {
   CompleteLessonInput,
   CompleteLessonResult,
@@ -277,6 +281,34 @@ function PracticePhase({
   // Cancel speech when chunk changes
   useEffect(() => { stop(); }, [currentIndex, stop]);
 
+  // Speech recognition
+  const {
+    supported: recogSupported,
+    status: pronStatus,
+    transcript,
+    start: startRecognition,
+    stop: stopRecognition,
+  } = useSpeechRecognition();
+
+  // Local pronunciation evaluation state
+  const [pronResult, setPronResult] = useState<'idle' | 'passed' | 'retry'>('idle');
+  const transcriptRef = useRef('');
+
+  // Keep a ref copy for the evaluation callback
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
+
+  const handlePronounceStop = () => {
+    stopRecognition();
+    // Allow time for the transcript to settle
+    setTimeout(() => {
+      const latest = transcriptRef.current;
+      const passed = !!latest && checkPronunciation(latest, currentChunk?.text ?? '');
+      setPronResult(passed ? 'passed' : 'retry');
+    }, 150);
+  };
+
   const currentChunk = sortedChunks[currentIndex];
   if (!currentChunk) return null;
 
@@ -422,30 +454,83 @@ function PracticePhase({
           </Button>
         )}
 
-        {/* Pronounce (placeholder — Task 34) */}
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled
-          title="Pronunciation practice will be available in a future update"
-          className="flex items-center gap-1.5"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.5}
+        {/* Pronounce */}
+        {recogSupported ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (pronStatus === 'listening') {
+                handlePronounceStop();
+              } else {
+                setPronResult('idle');
+                startRecognition();
+              }
+            }}
+            className={`flex items-center gap-1.5 ${
+              pronStatus === 'listening' ? 'ring-2 ring-error/50' : ''
+            }`}
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
-            />
-          </svg>
-          Pronounce
-        </Button>
+            {pronStatus === 'listening' ? (
+              <>
+                <svg className="h-4 w-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                </svg>
+                Stop
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                </svg>
+                Pronounce
+              </>
+            )}
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled
+            title="Speech recognition is not supported in this browser"
+            className="flex items-center gap-1.5"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+            </svg>
+            Pronounce unavailable
+          </Button>
+        )}
       </div>
+
+      {/* Pronunciation feedback */}
+      {pronResult === 'passed' && (
+        <div className="rounded-md border border-success/30 bg-success/10 px-4 py-3">
+          <p className="text-sm font-medium text-success">
+            ✓ Pronunciation passed
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            Your pronunciation matches the expected text.
+            {transcript && (
+              <span className="ml-1 italic">Heard: &ldquo;{transcript}&rdquo;</span>
+            )}
+          </p>
+        </div>
+      )}
+
+      {pronResult === 'retry' && (
+        <div className="rounded-md border border-error/30 bg-error/10 px-4 py-3">
+          <p className="text-sm font-medium text-error">
+            ✗ Try again
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            Your pronunciation did not match the expected text closely enough.
+            {transcript && (
+              <span className="ml-1 italic">Heard: &ldquo;{transcript}&rdquo;</span>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* Translation reveal */}
       {chunkTranslation && (

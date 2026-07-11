@@ -1,7 +1,24 @@
 /**
- * Practice — placeholder (full feature in Tasks 26–31).
- * Shows the dynamic `scenarioId` from the URL.
+ * FluentDraft — Practice lesson route
+ *
+ * Renders the practice lesson shell for a given scenario.
+ * Auth is handled by the parent (registered) layout.
+ *
+ * Related tasks:
+ *   - Task 26: Build practice lesson shell (this file)
+ *   - Task 27: Implement Understand phase
+ *   - Task 28: Implement Practice phase
  */
+
+import { notFound } from 'next/navigation';
+import { getScenarioWithPack } from '@/domains/scenarios/data';
+import PracticeShell from '@/domains/practice/components/practice-shell';
+import type { PracticeScenarioMeta } from '@/domains/practice/components/practice-shell';
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 interface PracticePageProps {
   params: Promise<{ scenarioId: string }>;
 }
@@ -9,15 +26,29 @@ interface PracticePageProps {
 export default async function PracticePage({ params }: PracticePageProps) {
   const { scenarioId } = await params;
 
-  return (
-    <div className="py-8 text-center">
-      <h1 className="text-xl font-semibold text-primary">Practice</h1>
-      <p className="mt-2 text-sm text-text-muted">
-        Scenario: <span className="font-medium text-text">{scenarioId}</span>
-      </p>
-      <p className="mt-1 text-sm text-text-muted">
-        The full practice engine will be built in Tasks 26–31.
-      </p>
-    </div>
-  );
+  // 1. Fetch scenario from seed data
+  const scenario = getScenarioWithPack(scenarioId);
+  if (!scenario) {
+    notFound();
+  }
+
+  // 2. Map seed data to the PracticeShell's expected shape
+  const meta: PracticeScenarioMeta = {
+    scenarioId: scenario.slug,
+    packId: scenario.packSlug,
+    packTitle: scenario.packTitle,
+    title: scenario.title,
+    context: scenario.context,
+    goal: scenario.goal,
+    tone: scenario.tone,
+    criteria: scenario.criteria,
+    difficulty: scenario.difficulty,
+    modelResponse: scenario.modelResponse,
+    keyPhrases: scenario.keyPhrases,
+    chunkCount: scenario.chunks.length,
+    phraseCount: scenario.keyPhrases.length,
+  };
+
+  // 3. Render the practice shell
+  return <PracticeShell scenario={meta} />;
 }

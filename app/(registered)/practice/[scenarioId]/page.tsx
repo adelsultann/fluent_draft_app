@@ -12,6 +12,7 @@
 
 import { notFound } from 'next/navigation';
 import { getScenarioWithPack } from '@/domains/scenarios/data';
+import { getUserTargetLanguage } from '@/domains/translation/get-target-language';
 import PracticeShell from '@/domains/practice/components/practice-shell';
 import type { PracticeScenarioMeta } from '@/domains/practice/components/practice-shell';
 
@@ -32,6 +33,9 @@ export default async function PracticePage({ params }: PracticePageProps) {
     notFound();
   }
 
+  // 1b. Fetch user's target language for translation reveal
+  const targetLanguageCode = await getUserTargetLanguage();
+
   // 2. Map seed data to the PracticeShell's expected shape
   const meta: PracticeScenarioMeta = {
     scenarioId: scenario.slug,
@@ -48,6 +52,7 @@ export default async function PracticePage({ params }: PracticePageProps) {
     chunks: scenario.chunks,
     translations: scenario.translations,
     recallBlanks: scenario.recallBlanks,
+    targetLanguageCode,
     chunkCount: scenario.chunks.length,
     phraseCount: scenario.keyPhrases.length,
   };

@@ -54,6 +54,8 @@ export interface PracticeScenarioMeta {
   chunks: SeedChunk[];
   translations: SeedTranslation[];
   recallBlanks: SeedRecallBlank[];
+  /** The authenticated user's target language code, or null if unavailable. */
+  targetLanguageCode: string | null;
   chunkCount: number;
   phraseCount: number;
 }
@@ -245,14 +247,59 @@ function UnderstandPhase({
 // Practice phase
 // ---------------------------------------------------------------------------
 
-/** Find the first available chunk translation in any language. */
-function findChunkTranslation(
+/**
+ * Find the best available translation for the current chunk.
+ *
+ * 1. Prefer a chunk-level translation in the user's target language.
+ * 2. Fall back to the model-response translation in the target language
+ *    (shows the full email, which contains the chunk).
+ * 3. Fall back to the first chunk translation in any language.
+ * 4. Returns `undefined` if nothing is available.
+ */
+function findTranslationForChunk(
   translations: SeedTranslation[],
   chunkOrder: number,
-): SeedTranslation | undefined {
-  return translations.find(
-    (t) => t.sourceType === 'chunk' && t.sourceKey === `chunk-${chunkOrder}`,
+  targetLanguage: string | null,
+): { text: string; languageCode: string } | undefined {
+  // Normalize target language to lowercase
+  const lang = targetLanguage?.toLowerCase();
+
+  // 1. Exact chunk translation in target language
+  if (lang) {
+    const chunkMatch = translations.find(
+      (t) =>
+        t.sourceType === 'chunk' &&
+        t.sourceKey === `chunk-${chunkOrder}` &&
+        t.languageCode === lang,
+    );
+    if (chunkMatch) {
+      return { text: chunkMatch.text, languageCode: chunkMatch.languageCode };
+    }
+
+    // 2. Fallback: model response in target language
+    const modelMatch = translations.find(
+      (t) =>
+        t.sourceType === 'model_response' &&
+        t.sourceKey === 'model' &&
+        t.languageCode === lang,
+    );
+    if (modelMatch) {
+      return { text: modelMatch.text, languageCode: modelMatch.languageCode };
+    }
+  }
+
+  // 3. Fallback: first chunk translation in any language
+  const anyChunk = translations.find(
+    (t) =>
+      t.sourceType === 'chunk' &&
+      t.sourceKey === `chunk-${chunkOrder}`,
   );
+  if (anyChunk) {
+    return { text: anyChunk.text, languageCode: anyChunk.languageCode };
+  }
+
+  // 4. Nothing available
+  return undefined;
 }
 
 /** The Practice phase — type the model response chunk by chunk. */
@@ -318,9 +365,10 @@ function PracticePhase({
   const isLast = currentIndex === totalChunks - 1;
 
   const currentTyped = typedDrafts[currentChunk.order] ?? '';
-  const chunkTranslation = findChunkTranslation(
+  const currentTranslation = findTranslationForChunk(
     scenario.translations,
     currentChunk.order,
+    scenario.targetLanguageCode,
   );
   const isTranslationRevealed = revealedTranslations.has(currentChunk.order);
 
@@ -590,43 +638,40 @@ function PracticePhase({
       )}
 
       {/* Translation reveal */}
-      {chunkTranslation && (
-        <div>
-          <button
-            type="button"
-            onClick={toggleTranslation}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-action hover:underline"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
+      <div>
+        {currentTranslation ? (
+          <>
+            <button
+              type="button"
+              onClick={toggleTranslation}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-action hover:underline"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.786.15 2.666.269m-2.666-.269A48.63 48.63 0 0115 5.621"
-              />
-            </svg>
-            {isTranslationRevealed ? 'Hide translation' : 'Reveal translation'}
-          </button>
-          {isTranslationRevealed && (
-            <div className="mt-2 rounded-md border border-phrase/30 bg-phrase/5 p-3">
-              <p className="text-xs font-medium text-phrase">
-                Translation
-              </p>
-              <p className="mt-1 text-sm leading-relaxed text-text">
-                {chunkTranslation.text}
-              </p>
-              <p className="mt-0.5 text-xs text-text-muted">
-                Language: {chunkTranslation.languageCode.toUpperCase()}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.786.15 2.666.269m-2.666-.269A48.63 48.63 0 0115 5.621" />
+              </svg>
+              {isTranslationRevealed ? 'Hide translation' : 'Reveal translation'}
+            </button>
+            {isTranslationRevealed && (
+              <div className="mt-2 rounded-md border border-phrase/30 bg-phrase/5 p-3">
+                <p className="text-xs font-medium text-phrase">
+                  Translation ({currentTranslation.languageCode.toUpperCase()})
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-text">
+                  {currentTranslation.text}
+                </p>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-text-muted italic">
+            No translation available for this chunk
+            {scenario.targetLanguageCode
+              ? ` in your language (${scenario.targetLanguageCode.toUpperCase()})`
+              : ''}
+            .
+          </p>
+        )}
+      </div>
 
       {/* Typing area */}
       <div>

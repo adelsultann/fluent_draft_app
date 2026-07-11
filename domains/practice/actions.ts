@@ -27,6 +27,7 @@ import { evaluateBadges } from '@/domains/gamification/badges';
 import type { BadgeEvaluationContext } from '@/domains/gamification/badges';
 import { evaluateMissions } from '@/domains/gamification/missions';
 import type { MissionProgressContext, UserMissionState } from '@/domains/gamification/missions';
+import { getWeekStartDate, getWeekEndDate } from '@/domains/leaderboard/periods';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbClient = SupabaseClient<any>;
@@ -536,7 +537,44 @@ export async function completeLesson(
     );
   }
 
-  // 15. Return result
+  // 15. Update weekly leaderboard entry
+  const weekStart = getWeekStartDate();
+  const weekEnd = getWeekEndDate();
+
+  // Fetch current weekly score
+  const { data: currentLeaderboardEntry } = await supabase
+    .from('leaderboard_entries')
+    .select('score')
+    .eq('user_id', user.id)
+    .eq('period_type', 'weekly')
+    .eq('period_start', weekStart)
+    .maybeSingle();
+
+  const currentWeeklyScore = currentLeaderboardEntry?.score ?? 0;
+  const newWeeklyScore = currentWeeklyScore + xpAwarded + missionXpAwarded;
+
+  // Fetch user's country for the leaderboard
+  const { data: countryProfile } = await supabase
+    .from('user_profiles')
+    .select('country_code')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const countryCode = countryProfile?.country_code ?? 'XX';
+
+  await supabase.from('leaderboard_entries').upsert(
+    {
+      user_id: user.id,
+      period_type: 'weekly',
+      period_start: weekStart,
+      period_end: weekEnd,
+      country_code: countryCode,
+      score: newWeeklyScore,
+    },
+    { onConflict: 'user_id, period_type, period_start' },
+  );
+
+  // 16. Return result
   const totalXpAwarded = xpAwarded + missionXpAwarded;
 
   return {

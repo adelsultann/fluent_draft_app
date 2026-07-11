@@ -33,3 +33,34 @@ export interface PhraseBankItem {
   /** When the phrase was saved. */
   savedAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Review flow types
+// ---------------------------------------------------------------------------
+
+/** Rating the user assigns after a review attempt. */
+export type ReviewRating = 'easy' | 'hard';
+
+/** Input for the review phrase server action. */
+export interface ReviewPhraseInput {
+  /** UUID of the phrase_bank_items row. */
+  phraseBankItemId: string;
+  /** What the user typed from memory. */
+  typedText: string;
+  /** User's self-assessment of difficulty. */
+  rating: ReviewRating;
+}
+
+/** Result returned by the review phrase server action. */
+export interface ReviewPhraseResult {
+  success: boolean;
+  error?: string;
+  /** Whether the typed text exactly matched the expected phrase. */
+  correct: boolean;
+  /** The expected phrase text (revealed after check). */
+  expectedText: string;
+  /** New mastery status after this review. */
+  mastery: MasteryStatus;
+  /** Next review date in ISO format, if applicable. */
+  nextReviewAt?: string;
+}

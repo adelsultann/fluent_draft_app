@@ -16,7 +16,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import type { SeedKeyPhrase } from '@/domains/scenarios/seed-schema';
+import type { SeedKeyPhrase, SeedChunk, SeedTranslation } from '@/domains/scenarios/seed-schema';
 import { Badge, Card, Button, Progress } from '@/components/ui';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +39,8 @@ export interface PracticeScenarioMeta {
   difficulty: string;
   modelResponse: string;
   keyPhrases: SeedKeyPhrase[];
+  chunks: SeedChunk[];
+  translations: SeedTranslation[];
   chunkCount: number;
   phraseCount: number;
 }
@@ -206,8 +208,252 @@ function UnderstandPhase({
   );
 }
 
-/** Placeholder for phases not yet implemented (Tasks 28–31). */
-function PracticePlaceholder({
+// ---------------------------------------------------------------------------
+// Practice phase
+// ---------------------------------------------------------------------------
+
+/** Find the first available chunk translation in any language. */
+function findChunkTranslation(
+  translations: SeedTranslation[],
+  chunkOrder: number,
+): SeedTranslation | undefined {
+  return translations.find(
+    (t) => t.sourceType === 'chunk' && t.sourceKey === `chunk-${chunkOrder}`,
+  );
+}
+
+/** The Practice phase — type the model response chunk by chunk. */
+function PracticePhase({
+  scenario,
+  onComplete,
+}: {
+  scenario: PracticeScenarioMeta;
+  onComplete: () => void;
+}) {
+  const sortedChunks = [...scenario.chunks].sort((a, b) => a.order - b.order);
+  const totalChunks = sortedChunks.length;
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [typedDrafts, setTypedDrafts] = useState<Record<number, string>>({});
+  const [revealedTranslations, setRevealedTranslations] = useState<Set<number>>(
+    () => new Set(),
+  );
+
+  const currentChunk = sortedChunks[currentIndex];
+  if (!currentChunk) return null;
+
+  const isFirst = currentIndex === 0;
+  const isLast = currentIndex === totalChunks - 1;
+
+  const currentTyped = typedDrafts[currentChunk.order] ?? '';
+  const chunkTranslation = findChunkTranslation(
+    scenario.translations,
+    currentChunk.order,
+  );
+  const isTranslationRevealed = revealedTranslations.has(currentChunk.order);
+
+  // Chunk navigation
+  const goNext = () => {
+    if (!isLast) setCurrentIndex((i) => i + 1);
+  };
+  const goPrev = () => {
+    if (!isFirst) setCurrentIndex((i) => i - 1);
+  };
+
+  // Typing
+  const updateDraft = (value: string) => {
+    setTypedDrafts((prev) => ({ ...prev, [currentChunk.order]: value }));
+  };
+
+  // Translation toggle
+  const toggleTranslation = () => {
+    setRevealedTranslations((prev) => {
+      const next = new Set(prev);
+      if (next.has(currentChunk.order)) {
+        next.delete(currentChunk.order);
+      } else {
+        next.add(currentChunk.order);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Progress */}
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-text">
+          Chunk {currentIndex + 1} of {totalChunks}
+        </span>
+        <span className="text-xs text-text-muted">
+          {currentTyped.length} characters typed
+        </span>
+      </div>
+
+      <Progress
+        value={((currentIndex + 1) / totalChunks) * 100}
+        className="mt-1"
+      />
+
+      {/* Current chunk — the target text */}
+      <Card>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+          Type this chunk
+        </h2>
+        <div className="whitespace-pre-line rounded-md border border-border bg-background p-4 text-sm leading-relaxed text-text">
+          {currentChunk.text}
+        </div>
+
+        {/* Audio-friendly variant, if available */}
+        {currentChunk.audioText && (
+          <p className="mt-2 text-xs italic text-text-muted">
+            Listen-friendly: {currentChunk.audioText}
+          </p>
+        )}
+      </Card>
+
+      {/* Listen & pronunciation controls (placeholders for Tasks 33–34) */}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled
+          title="Audio playback will be available in a future update"
+          className="flex items-center gap-1.5"
+        >
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"
+            />
+          </svg>
+          Listen
+        </Button>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled
+          title="Pronunciation practice will be available in a future update"
+          className="flex items-center gap-1.5"
+        >
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+            />
+          </svg>
+          Pronounce
+        </Button>
+      </div>
+
+      {/* Translation reveal */}
+      {chunkTranslation && (
+        <div>
+          <button
+            type="button"
+            onClick={toggleTranslation}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-action hover:underline"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.786.15 2.666.269m-2.666-.269A48.63 48.63 0 0115 5.621"
+              />
+            </svg>
+            {isTranslationRevealed ? 'Hide translation' : 'Reveal translation'}
+          </button>
+          {isTranslationRevealed && (
+            <div className="mt-2 rounded-md border border-phrase/30 bg-phrase/5 p-3">
+              <p className="text-xs font-medium text-phrase">
+                Translation
+              </p>
+              <p className="mt-1 text-sm leading-relaxed text-text">
+                {chunkTranslation.text}
+              </p>
+              <p className="mt-0.5 text-xs text-text-muted">
+                Language: {chunkTranslation.languageCode.toUpperCase()}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Typing area */}
+      <div>
+        <label
+          htmlFor="practice-typing-area"
+          className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted"
+        >
+          Your answer
+        </label>
+        <textarea
+          id="practice-typing-area"
+          rows={4}
+          value={currentTyped}
+          onChange={(e) => updateDraft(e.target.value)}
+          placeholder="Type the chunk exactly as shown above…"
+          className="w-full rounded-md border border-border bg-surface px-4 py-3 text-sm text-text placeholder:text-text-muted/60 focus:border-action focus:outline-none focus:ring-1 focus:ring-action"
+        />
+        <p className="mt-2 text-xs text-text-muted">
+          <span className="font-medium text-phrase">Exact match required:</span>{' '}
+          Capitalization, punctuation, and spacing must match exactly.
+          Checking will be available in a future update.
+        </p>
+      </div>
+
+      {/* Navigation */}
+      <div className="flex items-center justify-between">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={goPrev}
+          disabled={isFirst}
+        >
+          ← Previous
+        </Button>
+
+        <span className="text-xs text-text-muted">
+          {currentIndex + 1} / {totalChunks}
+        </span>
+
+        {isLast ? (
+          <Button variant="primary" size="sm" onClick={onComplete}>
+            Continue to Recall →
+          </Button>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={goNext}>
+            Next →
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder for phases not yet implemented (Tasks 30–31). */
+function PhasePlaceholder({
   currentPhase,
   onBack,
 }: {
@@ -237,11 +483,10 @@ function PracticePlaceholder({
         </h3>
         <p className="text-sm text-text-muted">
           The {PHASE_LABELS[currentPhase].toLowerCase()} phase will be fully implemented
-          in a future task. You can return to the Understand phase to review the
-          scenario content.
+          in a future task.
         </p>
         <Button variant="secondary" size="lg" onClick={onBack} className="mt-2">
-          ← Back to Understand
+          ← Back to Practice
         </Button>
       </div>
     </Card>
@@ -369,10 +614,17 @@ export default function PracticeShell({ scenario }: PracticeShellProps) {
             />
           )}
 
-          {currentPhase !== 'understand' && (
-            <PracticePlaceholder
+          {currentPhase === 'practice' && (
+            <PracticePhase
+              scenario={scenario}
+              onComplete={advancePhase}
+            />
+          )}
+
+          {(currentPhase === 'recall' || currentPhase === 'save') && (
+            <PhasePlaceholder
               currentPhase={currentPhase}
-              onBack={() => setCurrentPhase('understand')}
+              onBack={() => setCurrentPhase('practice')}
             />
           )}
         </div>

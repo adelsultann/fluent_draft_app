@@ -45,6 +45,8 @@ export default async function PracticePage({ params }: PracticePageProps) {
     difficulty: scenario.difficulty,
     modelResponse: scenario.modelResponse,
     keyPhrases: scenario.keyPhrases,
+    chunks: scenario.chunks,
+    translations: scenario.translations,
     chunkCount: scenario.chunks.length,
     phraseCount: scenario.keyPhrases.length,
   };

@@ -59,6 +59,8 @@ export default function DemoProgressClient({ scenario }: DemoProgressClientProps
   const router = useRouter();
   const [progress, setProgress] = useState<DemoProgress | null>(null);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const completionModalDismissed = useRef(false);
   const mounted = useRef(false);
 
   // Hydrate from localStorage on the client after mount.
@@ -85,6 +87,13 @@ export default function DemoProgressClient({ scenario }: DemoProgressClientProps
     return () => window.removeEventListener('beforeunload', handler);
   }, [progress]);
 
+  // Show completion signup prompt when demo is completed.
+  useEffect(() => {
+    if (progress?.completed && !completionModalDismissed.current) {
+      setShowCompletionModal(true);
+    }
+  }, [progress?.completed]);
+
   // Persist whenever progress changes (after initial hydration).
   const update = useCallback(
     (next: DemoProgress) => {
@@ -99,6 +108,8 @@ export default function DemoProgressClient({ scenario }: DemoProgressClientProps
     const fresh = createProgress(scenario.slug);
     setProgress(fresh);
     saveProgress(fresh);
+    completionModalDismissed.current = false;
+    setShowCompletionModal(false);
   };
 
   // Both server and client render the same loading state initially.
@@ -232,6 +243,48 @@ export default function DemoProgressClient({ scenario }: DemoProgressClientProps
               className="flex-1"
             >
               Sign up to save
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Completion signup prompt */}
+      <Modal
+        open={showCompletionModal}
+        onClose={() => {
+          setShowCompletionModal(false);
+          completionModalDismissed.current = true;
+        }}
+        title="Demo Complete!"
+        description="You've finished the demo lesson — great work!"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-text-muted">
+            Your demo is complete. To save your progress permanently, earn XP, track your
+            streaks, save useful phrases to your Phrase Bank, and compete on the leaderboard,
+            create a free account now.
+          </p>
+          <p className="text-sm text-text-muted">
+            Without an account, your results and phrases will be lost when you leave this
+            browser.
+          </p>
+          <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowCompletionModal(false);
+                completionModalDismissed.current = true;
+              }}
+              className="flex-1"
+            >
+              Review my result
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => router.push('/signup')}
+              className="flex-1"
+            >
+              Create free account
             </Button>
           </div>
         </div>

@@ -47,6 +47,7 @@ export default async function PracticePage({ params }: PracticePageProps) {
     keyPhrases: scenario.keyPhrases,
     chunks: scenario.chunks,
     translations: scenario.translations,
+    recallBlanks: scenario.recallBlanks,
     chunkCount: scenario.chunks.length,
     phraseCount: scenario.keyPhrases.length,
   };

@@ -16,7 +16,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import type { SeedKeyPhrase, SeedChunk, SeedTranslation } from '@/domains/scenarios/seed-schema';
+import type { SeedKeyPhrase, SeedChunk, SeedTranslation, SeedRecallBlank } from '@/domains/scenarios/seed-schema';
 import { isExactMatch } from '@/domains/scoring/engine';
 import { Badge, Card, Button, Progress } from '@/components/ui';
 
@@ -42,6 +42,7 @@ export interface PracticeScenarioMeta {
   keyPhrases: SeedKeyPhrase[];
   chunks: SeedChunk[];
   translations: SeedTranslation[];
+  recallBlanks: SeedRecallBlank[];
   chunkCount: number;
   phraseCount: number;
 }
@@ -553,12 +554,282 @@ function PracticePhase({
   );
 }
 
-/** Placeholder for phases not yet implemented (Tasks 30–31). */
-function PhasePlaceholder({
-  currentPhase,
+// ---------------------------------------------------------------------------
+// Recall phase
+// ---------------------------------------------------------------------------
+
+/** The Recall phase — complete missing key phrases from memory. */
+function RecallPhase({
+  scenario,
+  onComplete,
+}: {
+  scenario: PracticeScenarioMeta;
+  onComplete: () => void;
+}) {
+  // Build recall prompts from seed recallBlanks, or fall back to keyPhrases
+  const phraseByOrder = new Map<number, SeedKeyPhrase>();
+  for (const p of scenario.keyPhrases) {
+    phraseByOrder.set(p.order, p);
+  }
+
+  interface RecallPrompt {
+    phraseOrder: number;
+    promptText: string;
+    expectedText: string;
+  }
+
+  const prompts: RecallPrompt[] = [];
+
+  if (scenario.recallBlanks && scenario.recallBlanks.length > 0) {
+    // Use seeded recall blanks — they specify which phrases and blanked prompts
+    const sortedBlanks = [...scenario.recallBlanks].sort(
+      (a, b) => a.phraseOrder - b.phraseOrder,
+    );
+    for (const blank of sortedBlanks) {
+      const phrase = phraseByOrder.get(blank.phraseOrder);
+      if (phrase) {
+        prompts.push({
+          phraseOrder: blank.phraseOrder,
+          promptText: blank.blankedText,
+          expectedText: phrase.text,
+        });
+      }
+    }
+  }
+
+  // Fallback: if no recall blanks exist, use all key phrases directly
+  if (prompts.length === 0) {
+    const sortedPhrases = [...scenario.keyPhrases].sort((a, b) => a.order - b.order);
+    for (const phrase of sortedPhrases) {
+      prompts.push({
+        phraseOrder: phrase.order,
+        promptText: `Type the phrase: "${phrase.text}"`,
+        expectedText: phrase.text,
+      });
+    }
+  }
+
+  const totalPrompts = prompts.length;
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [checkedPhrases, setCheckedPhrases] = useState<Set<number>>(() => new Set());
+  const [attemptCounts, setAttemptCounts] = useState<Record<number, number>>({});
+  const [feedback, setFeedback] = useState<Record<number, 'idle' | 'correct' | 'retry'>>({});
+  const [typedDrafts, setTypedDrafts] = useState<Record<number, string>>({});
+
+  const currentPrompt = prompts[currentIndex];
+  if (!currentPrompt) return null;
+
+  const isFirst = currentIndex === 0;
+  const isLast = currentIndex === totalPrompts - 1;
+  const allChecked = checkedPhrases.size >= totalPrompts;
+
+  const currentTyped = typedDrafts[currentPrompt.phraseOrder] ?? '';
+  const isChecked = checkedPhrases.has(currentPrompt.phraseOrder);
+  const currentFeedback = feedback[currentPrompt.phraseOrder] ?? 'idle';
+  const currentAttempts = attemptCounts[currentPrompt.phraseOrder] ?? 0;
+
+  // Find the key phrase for reference (shown after correct answer)
+  const currentPhrase = phraseByOrder.get(currentPrompt.phraseOrder);
+
+  const handleCheck = () => {
+    const trimmed = currentTyped.trim();
+    if (!trimmed) return;
+
+    const attemptNum = currentAttempts + 1;
+    setAttemptCounts((prev) => ({ ...prev, [currentPrompt.phraseOrder]: attemptNum }));
+
+    if (isExactMatch(trimmed, currentPrompt.expectedText)) {
+      setCheckedPhrases((prev) => {
+        const next = new Set(prev);
+        next.add(currentPrompt.phraseOrder);
+        return next;
+      });
+      setFeedback((prev) => ({ ...prev, [currentPrompt.phraseOrder]: 'correct' }));
+    } else {
+      setFeedback((prev) => ({ ...prev, [currentPrompt.phraseOrder]: 'retry' }));
+    }
+  };
+
+  const goNext = () => {
+    if (!isLast) setCurrentIndex((i) => i + 1);
+  };
+  const goPrev = () => {
+    if (!isFirst) setCurrentIndex((i) => i - 1);
+  };
+
+  const checkedCount = checkedPhrases.size;
+
+  return (
+    <div className="space-y-6">
+      {/* Recall progress */}
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-text">
+          Phrase {currentIndex + 1} of {totalPrompts}
+        </span>
+        <span className="text-xs text-text-muted">
+          {checkedCount} of {totalPrompts} correct
+        </span>
+      </div>
+
+      <Progress
+        value={((currentIndex + 1) / totalPrompts) * 100}
+        className="mt-1"
+      />
+
+      {/* Recall prompt */}
+      <Card>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
+          Recall the missing phrase
+        </h2>
+        <div className="whitespace-pre-line rounded-md border border-border bg-background p-5 text-sm leading-relaxed text-text">
+          {currentPrompt.promptText}
+        </div>
+        {currentPhrase && (
+          <p className="mt-2 text-xs text-text-muted">
+            <span className="font-medium">Hint:</span> {currentPhrase.meaning}
+          </p>
+        )}
+      </Card>
+
+      {/* Typing area */}
+      <div>
+        <label
+          htmlFor="recall-typing-area"
+          className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted"
+        >
+          Type the missing phrase
+        </label>
+        <textarea
+          id="recall-typing-area"
+          rows={3}
+          value={currentTyped}
+          onChange={(e) => {
+            setTypedDrafts((prev) => ({
+              ...prev,
+              [currentPrompt.phraseOrder]: e.target.value,
+            }));
+            // Clear feedback when user edits
+            if (currentFeedback !== 'idle') {
+              setFeedback((prev) => ({
+                ...prev,
+                [currentPrompt.phraseOrder]: 'idle',
+              }));
+            }
+          }}
+          placeholder="Type the missing phrase from memory…"
+          disabled={isChecked}
+          className={`w-full rounded-md border px-4 py-3 text-sm placeholder:text-text-muted/60 focus:outline-none focus:ring-1 ${
+            isChecked
+              ? 'border-success/40 bg-success/5 text-text'
+              : currentFeedback === 'retry'
+                ? 'border-error/40 bg-error/5 text-text focus:border-action focus:ring-action'
+                : 'border-border bg-surface text-text focus:border-action focus:ring-action'
+          }`}
+        />
+
+        {/* Helper text */}
+        <p className="mt-2 text-xs text-text-muted">
+          <span className="font-medium text-phrase">Type from memory:</span>{' '}
+          Capitalization, punctuation, and spacing must match exactly.
+          {!isChecked && ' Type the phrase and click Check Answer.'}
+        </p>
+
+        {/* Check button */}
+        {!isChecked && (
+          <div className="mt-3">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleCheck}
+              disabled={currentTyped.trim().length === 0}
+            >
+              Check Answer
+            </Button>
+          </div>
+        )}
+
+        {/* Feedback */}
+        {currentFeedback === 'correct' && (
+          <div className="mt-3 rounded-md border border-success/30 bg-success/10 px-4 py-3">
+            <p className="text-sm font-medium text-success">
+              ✓ Correct!
+              {currentAttempts === 1
+                ? ' (first try)'
+                : ` (after ${currentAttempts} ${currentAttempts === 1 ? 'attempt' : 'attempts'})`}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              Great recall! The phrase was:{' '}
+              <span className="font-medium text-text">{currentPrompt.expectedText}</span>
+            </p>
+          </div>
+        )}
+
+        {currentFeedback === 'retry' && (
+          <div className="mt-3 rounded-md border border-error/30 bg-error/10 px-4 py-3">
+            <p className="text-sm font-medium text-error">
+              ✗ Not quite — try again
+              {currentAttempts > 1 && (
+                <span className="font-normal"> (attempt {currentAttempts})</span>
+              )}
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              Your answer does not match the expected phrase exactly.
+              Check your capitalization, punctuation, and spacing.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <div className="flex items-center justify-between">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={goPrev}
+          disabled={isFirst}
+        >
+          ← Previous
+        </Button>
+
+        <span className="text-xs text-text-muted">
+          Phrase {currentIndex + 1} / {totalPrompts}
+        </span>
+
+        {isLast ? (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onComplete}
+            disabled={!allChecked}
+            title={
+              !allChecked
+                ? `Complete all phrases first (${checkedCount}/${totalPrompts} done)`
+                : undefined
+            }
+          >
+            Continue to Save →
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={goNext}
+            disabled={!isChecked}
+            title={!isChecked ? 'Check your answer before continuing' : undefined}
+          >
+            Next →
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder for the Save phase (Task 31). */
+function SavePlaceholder({
   onBack,
 }: {
-  currentPhase: PracticePhase;
   onBack: () => void;
 }) {
   return (
@@ -579,15 +850,12 @@ function PhasePlaceholder({
             />
           </svg>
         </div>
-        <h3 className="text-lg font-semibold text-primary">
-          {PHASE_LABELS[currentPhase]} Phase
-        </h3>
+        <h3 className="text-lg font-semibold text-primary">Save Phase</h3>
         <p className="text-sm text-text-muted">
-          The {PHASE_LABELS[currentPhase].toLowerCase()} phase will be fully implemented
-          in a future task.
+          The Save phase will be fully implemented in a future task.
         </p>
         <Button variant="secondary" size="lg" onClick={onBack} className="mt-2">
-          ← Back to Practice
+          ← Back to Recall
         </Button>
       </div>
     </Card>
@@ -722,10 +990,16 @@ export default function PracticeShell({ scenario }: PracticeShellProps) {
             />
           )}
 
-          {(currentPhase === 'recall' || currentPhase === 'save') && (
-            <PhasePlaceholder
-              currentPhase={currentPhase}
-              onBack={() => setCurrentPhase('practice')}
+          {currentPhase === 'recall' && (
+            <RecallPhase
+              scenario={scenario}
+              onComplete={advancePhase}
+            />
+          )}
+
+          {currentPhase === 'save' && (
+            <SavePlaceholder
+              onBack={() => setCurrentPhase('recall')}
             />
           )}
         </div>

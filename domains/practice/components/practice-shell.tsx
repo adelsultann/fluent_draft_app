@@ -5,7 +5,7 @@
  *
  * The main container for a registered practice lesson. Displays the scenario
  * metadata (title, context, goal, tone, criteria), a phase progress indicator,
- * and a placeholder action panel for future phase components.
+ * and phase-specific content panels (Understand → Practice → Recall → Save).
  *
  * Rendered by the practice route page after the scenario is fetched server-side.
  *
@@ -15,7 +15,7 @@
  *   - docs/style-guide.md § Practice Screen Guidance
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import type { SeedKeyPhrase } from '@/domains/scenarios/seed-schema';
 import { Badge, Card, Button, Progress } from '@/components/ui';
 
@@ -96,13 +96,13 @@ function PhaseProgress({
               {/* Phase step */}
               <button
                 type="button"
-                disabled={!isPast && !isActive}
+                disabled={i > currentIndex}
                 onClick={() => onPhaseClick?.(phase)}
                 className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   isActive
                     ? 'bg-action text-white'
                     : isPast
-                      ? 'bg-action/10 text-action hover:bg-action/20'
+                      ? 'bg-action/10 text-action hover:bg-action/20 cursor-pointer'
                       : 'bg-border text-text-muted'
                 }`}
                 aria-current={isActive ? 'step' : undefined}
@@ -169,11 +169,111 @@ function CriteriaList({ criteria }: { criteria: string[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase sub-components
+// ---------------------------------------------------------------------------
+
+/** The Understand phase — read the scenario, then continue. */
+function UnderstandPhase({
+  scenario,
+  onContinue,
+}: {
+  scenario: PracticeScenarioMeta;
+  onContinue: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      {/* Model response — the main content to read */}
+      <Card>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
+          Model Response
+        </h2>
+        <div className="whitespace-pre-line rounded-md border border-border bg-background p-5 text-sm leading-relaxed text-text">
+          {scenario.modelResponse}
+        </div>
+        <p className="mt-3 text-xs text-text-muted">
+          Read the model response carefully. In the Practice phase, you will type it
+          chunk by chunk from memory.
+        </p>
+      </Card>
+
+      {/* Continue action */}
+      <div className="flex justify-end">
+        <Button onClick={onContinue} variant="primary" size="lg">
+          Continue to Practice
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder for phases not yet implemented (Tasks 28–31). */
+function PracticePlaceholder({
+  currentPhase,
+  onBack,
+}: {
+  currentPhase: PracticePhase;
+  onBack: () => void;
+}) {
+  return (
+    <Card className="flex min-h-[400px] flex-col items-center justify-center text-center">
+      <div className="max-w-md space-y-3">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-action/10">
+          <svg
+            className="h-6 w-6 text-action"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-primary">
+          {PHASE_LABELS[currentPhase]} Phase
+        </h3>
+        <p className="text-sm text-text-muted">
+          The {PHASE_LABELS[currentPhase].toLowerCase()} phase will be fully implemented
+          in a future task. You can return to the Understand phase to review the
+          scenario content.
+        </p>
+        <Button variant="secondary" size="lg" onClick={onBack} className="mt-2">
+          ← Back to Understand
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
 export default function PracticeShell({ scenario }: PracticeShellProps) {
-  const [currentPhase] = useState<PracticePhase>('understand');
+  const [currentPhase, setCurrentPhase] = useState<PracticePhase>('understand');
+
+  const goToPhase = useCallback(
+    (phase: PracticePhase) => {
+      const targetIndex = PHASE_ORDER.indexOf(phase);
+      const currentIndex = PHASE_ORDER.indexOf(currentPhase);
+      // Allow navigating to any phase the user has already reached
+      // (current phase) or past phases. Future phases are not accessible.
+      if (targetIndex <= currentIndex) {
+        setCurrentPhase(phase);
+      }
+    },
+    [currentPhase],
+  );
+
+  const advancePhase = useCallback(() => {
+    const currentIndex = PHASE_ORDER.indexOf(currentPhase);
+    if (currentIndex < PHASE_ORDER.length - 1) {
+      setCurrentPhase(PHASE_ORDER[currentIndex + 1]);
+    }
+  }, [currentPhase]);
 
   return (
     <div className="space-y-6">
@@ -206,7 +306,7 @@ export default function PracticeShell({ scenario }: PracticeShellProps) {
       </div>
 
       {/* Phase progress */}
-      <PhaseProgress currentPhase={currentPhase} />
+      <PhaseProgress currentPhase={currentPhase} onPhaseClick={goToPhase} />
 
       {/* Two-column layout: scenario info + action panel */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -260,38 +360,21 @@ export default function PracticeShell({ scenario }: PracticeShellProps) {
           )}
         </div>
 
-        {/* Right column: main action panel */}
+        {/* Right column: main action panel — phase-dependent */}
         <div className="lg:col-span-2">
-          <Card className="flex min-h-[400px] flex-col items-center justify-center text-center">
-            <div className="max-w-md space-y-3">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-action/10">
-                <svg
-                  className="h-6 w-6 text-action"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
-                  />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold text-primary">
-                {PHASE_LABELS[currentPhase]} Phase
-              </h3>
-              <p className="text-sm text-text-muted">
-                Read through the scenario context, goal, and criteria on the left.
-                When you&apos;re ready, click below to move to the Practice phase where
-                you&apos;ll type the model response chunk by chunk.
-              </p>
-              <Button variant="primary" size="lg" className="mt-2">
-                Continue to Practice
-              </Button>
-            </div>
-          </Card>
+          {currentPhase === 'understand' && (
+            <UnderstandPhase
+              scenario={scenario}
+              onContinue={advancePhase}
+            />
+          )}
+
+          {currentPhase !== 'understand' && (
+            <PracticePlaceholder
+              currentPhase={currentPhase}
+              onBack={() => setCurrentPhase('understand')}
+            />
+          )}
         </div>
       </div>
     </div>

@@ -27,7 +27,7 @@ import { evaluateBadges } from '@/domains/gamification/badges';
 import type { BadgeEvaluationContext } from '@/domains/gamification/badges';
 import { evaluateMissions } from '@/domains/gamification/missions';
 import type { MissionProgressContext, UserMissionState } from '@/domains/gamification/missions';
-import { getWeekStartDate, getWeekEndDate } from '@/domains/leaderboard/periods';
+import { getWeekStartDate, getWeekEndDate, getMonthStartDate, getMonthEndDate } from '@/domains/leaderboard/periods';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbClient = SupabaseClient<any>;
@@ -570,6 +570,33 @@ export async function completeLesson(
       period_end: weekEnd,
       country_code: countryCode,
       score: newWeeklyScore,
+    },
+    { onConflict: 'user_id, period_type, period_start' },
+  );
+
+  // Also update monthly leaderboard entry
+  const monthStart = getMonthStartDate();
+  const monthEnd = getMonthEndDate();
+
+  const { data: currentMonthlyEntry } = await supabase
+    .from('leaderboard_entries')
+    .select('score')
+    .eq('user_id', user.id)
+    .eq('period_type', 'monthly')
+    .eq('period_start', monthStart)
+    .maybeSingle();
+
+  const currentMonthlyScore = currentMonthlyEntry?.score ?? 0;
+  const newMonthlyScore = currentMonthlyScore + xpAwarded + missionXpAwarded;
+
+  await supabase.from('leaderboard_entries').upsert(
+    {
+      user_id: user.id,
+      period_type: 'monthly',
+      period_start: monthStart,
+      period_end: monthEnd,
+      country_code: countryCode,
+      score: newMonthlyScore,
     },
     { onConflict: 'user_id, period_type, period_start' },
   );

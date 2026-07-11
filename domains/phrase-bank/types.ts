@@ -22,6 +22,8 @@ export interface PhraseBankItem {
   meaning: string;
   /** An example sentence using the phrase. */
   example: string;
+  /** A common mistake learners make with this phrase (null if none). */
+  commonMistake: string | null;
   /** The title of the source scenario. */
   scenarioTitle: string;
   /** The slug of the source scenario for linking. */

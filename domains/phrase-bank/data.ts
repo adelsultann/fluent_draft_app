@@ -30,6 +30,7 @@ interface PhraseBankJoinRow {
     text: string;
     meaning: string;
     example: string;
+    common_mistake: string | null;
   } | null;
   scenarios: {
     id: string;
@@ -72,7 +73,8 @@ export async function getUserPhrases(): Promise<PhraseBankItem[]> {
         id,
         text,
         meaning,
-        example
+        example,
+        common_mistake
       ),
       scenarios!inner (
         id,
@@ -104,6 +106,7 @@ function mapRow(row: PhraseBankJoinRow): PhraseBankItem {
     text: row.key_phrases?.text ?? '(phrase unavailable)',
     meaning: row.key_phrases?.meaning ?? '',
     example: row.key_phrases?.example ?? '',
+    commonMistake: row.key_phrases?.common_mistake ?? null,
     scenarioTitle: row.scenarios?.title ?? 'Unknown scenario',
     scenarioSlug: row.scenarios?.slug ?? '',
     mastery: row.mastery as MasteryStatus,

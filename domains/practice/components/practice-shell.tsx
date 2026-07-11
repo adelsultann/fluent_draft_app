@@ -15,11 +15,12 @@
  *   - docs/style-guide.md § Practice Screen Guidance
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { SeedKeyPhrase, SeedChunk, SeedTranslation, SeedRecallBlank } from '@/domains/scenarios/seed-schema';
 import { isExactMatch } from '@/domains/scoring/engine';
 import { Badge, Card, Button, Progress } from '@/components/ui';
 import { completeLesson } from '@/domains/practice/actions';
+import { useSpeechSynthesis } from '@/domains/pronunciation/use-speech-synthesis';
 import type {
   CompleteLessonInput,
   CompleteLessonResult,
@@ -271,6 +272,11 @@ function PracticePhase({
   const [attemptCounts, setAttemptCounts] = useState<Record<number, number>>({});
   const [feedback, setFeedback] = useState<Record<number, 'idle' | 'correct' | 'retry'>>({});
 
+  // TTS (must be before early return)
+  const { supported: ttsSupported, speaking, speak, stop } = useSpeechSynthesis();
+  // Cancel speech when chunk changes
+  useEffect(() => { stop(); }, [currentIndex, stop]);
+
   const currentChunk = sortedChunks[currentIndex];
   if (!currentChunk) return null;
 
@@ -309,7 +315,6 @@ function PracticePhase({
     }
   };
 
-  // Chunk navigation
   const goNext = () => {
     if (!isLast) setCurrentIndex((i) => i + 1);
   };
@@ -369,31 +374,55 @@ function PracticePhase({
         )}
       </Card>
 
-      {/* Listen & pronunciation controls (placeholders for Tasks 33–34) */}
+      {/* Listen & pronunciation controls */}
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled
-          title="Audio playback will be available in a future update"
-          className="flex items-center gap-1.5"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.5}
+        {/* Listen / Stop */}
+        {ttsSupported ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (speaking) {
+                stop();
+              } else {
+                const textToSpeak = currentChunk.audioText || currentChunk.text;
+                speak(textToSpeak);
+              }
+            }}
+            className="flex items-center gap-1.5"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"
-            />
-          </svg>
-          Listen
-        </Button>
+            {speaking ? (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
+                </svg>
+                Stop
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                </svg>
+                Listen
+              </>
+            )}
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled
+            title="Audio playback is not supported in this browser"
+            className="flex items-center gap-1.5"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+            </svg>
+            Listen unavailable
+          </Button>
+        )}
 
+        {/* Pronounce (placeholder — Task 34) */}
         <Button
           variant="secondary"
           size="sm"
@@ -669,6 +698,12 @@ function RecallPhase({
   const [feedback, setFeedback] = useState<Record<number, 'idle' | 'correct' | 'retry'>>({});
   const [typedDrafts, setTypedDrafts] = useState<Record<number, string>>({});
 
+  // TTS
+  const { supported: ttsSupported, speaking, speak, stop } = useSpeechSynthesis();
+
+  // Cancel speech when prompt changes
+  useEffect(() => { stop(); }, [currentIndex, stop]);
+
   const currentPrompt = prompts[currentIndex];
   if (!currentPrompt) return null;
 
@@ -743,6 +778,40 @@ function RecallPhase({
           </p>
         )}
       </Card>
+
+      {/* Listen control */}
+      {ttsSupported ? (
+        <div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (speaking) {
+                stop();
+              } else {
+                speak(currentPrompt.expectedText);
+              }
+            }}
+            className="flex items-center gap-1.5"
+          >
+            {speaking ? (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
+                </svg>
+                Stop
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                </svg>
+                Listen
+              </>
+            )}
+          </Button>
+        </div>
+      ) : null}
 
       {/* Typing area */}
       <div>

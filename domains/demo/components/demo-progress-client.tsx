@@ -281,7 +281,16 @@ export default function DemoProgressClient({ scenario }: DemoProgressClientProps
             </Button>
             <Button
               variant="primary"
-              onClick={() => router.push('/signup')}
+              onClick={() => {
+                // Flag that demo progress is ready for conversion after signup.
+                try {
+                  sessionStorage.setItem(
+                    'fluentdraft:pending-demo-convert',
+                    scenario.slug,
+                  );
+                } catch { /* ignore */ }
+                router.push('/signup');
+              }}
               className="flex-1"
             >
               Create free account

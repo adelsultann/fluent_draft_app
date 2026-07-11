@@ -111,20 +111,39 @@ function ContinueLessonCard({
   );
 }
 
-function NextRecommendationPlaceholder() {
+function NextRecommendationCard({
+  lesson,
+}: {
+  lesson: DashboardSummary['recommendedLesson'];
+}) {
+  if (!lesson) {
+    return (
+      <Card className="border-dashed bg-background/50">
+        <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+          Recommended
+        </p>
+        <p className="mt-2 text-sm text-text-muted">
+          No lessons available right now.
+        </p>
+      </Card>
+    );
+  }
+
   return (
-    <Card className="border-dashed bg-background/50">
+    <Card>
       <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
         Recommended
       </p>
-      <p className="mt-2 text-sm text-text-muted">
-        Complete more lessons to get a personalized recommendation.
+      <p className="mt-1 text-sm font-medium text-text line-clamp-1">
+        {lesson.title}
       </p>
+      <p className="mt-0.5 text-xs text-text-muted">{lesson.packTitle}</p>
+      <p className="mt-2 text-xs italic text-text-muted">{lesson.reason}</p>
       <Link
-        href="/packs"
+        href={`/practice/${lesson.scenarioId}`}
         className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-action hover:underline"
       >
-        Browse lessons
+        Start lesson
         <span aria-hidden="true">&rarr;</span>
       </Link>
     </Card>
@@ -241,7 +260,7 @@ export default function DashboardSummaryView({ data }: DashboardSummaryProps) {
             </Link>
           </Card>
         )}
-        <NextRecommendationPlaceholder />
+        <NextRecommendationCard lesson={data.recommendedLesson} />
       </div>
     </div>
   );

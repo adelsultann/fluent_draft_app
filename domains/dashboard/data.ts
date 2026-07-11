@@ -16,6 +16,7 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/supabase/auth';
 import { resolveLevel, LEVELS } from '@/domains/gamification/levels';
+import { getAllActiveScenarios } from '@/domains/scenarios/data';
 import type { DashboardSummary } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,11 +46,12 @@ export async function getDashboardSummary(): Promise<DashboardSummary | null> {
     phraseBankResult,
     reviewDueResult,
     continueResult,
+    completedResult,
   ] = await Promise.all([
-    // 1. User profile (display_name, total_xp, current_level_id)
+    // 1. User profile (display_name, total_xp, current_level_id, english_level)
     supabase
       .from('user_profiles')
-      .select('display_name, total_xp, current_level_id')
+      .select('display_name, total_xp, current_level_id, english_level')
       .eq('user_id', user.id)
       .maybeSingle(),
 
@@ -91,11 +93,23 @@ export async function getDashboardSummary(): Promise<DashboardSummary | null> {
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+
+    // 7. Completed scenario slugs (for recommendation filtering)
+    supabase
+      .from('lesson_attempts')
+      .select('scenarios!inner(slug)')
+      .eq('user_id', user.id)
+      .eq('status', 'completed'),
   ]);
 
   // --- Process results ---
 
-  const profile = profileResult.data as { display_name: string; total_xp: number; current_level_id: number } | null;
+  const profile = profileResult.data as {
+    display_name: string;
+    total_xp: number;
+    current_level_id: number;
+    english_level: string;
+  } | null;
   const streak = streakResult.data as { current_streak_days: number } | null;
   const weeklyXpRows = (weeklyXpResult.data ?? []) as { points: number }[];
   const phraseBankRows = (phraseBankResult.data ?? []) as { mastery: string }[];
@@ -144,6 +158,13 @@ export async function getDashboardSummary(): Promise<DashboardSummary | null> {
     }
   }
 
+  // Recommendation
+  const recommendedLesson = buildRecommendation(
+    continueLesson,
+    profile?.english_level ?? 'beginner',
+    completedResult.data as { scenarios: { slug: string } }[] | null,
+  );
+
   return {
     displayName: profile?.display_name ?? 'Learner',
     streakDays: streak?.current_streak_days ?? 0,
@@ -154,7 +175,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary | null> {
     xpToNextLevel,
     reviewDueCount,
     continueLesson,
-    recommendedLesson: null, // placeholder — Task 44
+    recommendedLesson,
     phraseBankSummary: { saved, learning, weak, mastered },
   };
 }
@@ -183,4 +204,89 @@ function getWeekEndISO(): string {
   sunday.setUTCDate(now.getUTCDate() + diffToSunday);
   sunday.setUTCHours(23, 59, 59, 999);
   return sunday.toISOString();
+}
+
+// ---------------------------------------------------------------------------
+// Recommendation logic (Task 44)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a recommended next lesson using simple MVP priority logic:
+ *
+ *   1. Continue an in-progress lesson if one exists.
+ *   2. Recommend an active scenario matching the user's English level.
+ *   3. Recommend the first active uncompleted scenario.
+ *   4. Return null (all completed / empty state).
+ */
+function buildRecommendation(
+  continueLesson: DashboardSummary['continueLesson'],
+  userEnglishLevel: string,
+  completedRows: { scenarios: { slug: string } }[] | null,
+): DashboardSummary['recommendedLesson'] {
+  // Priority 1: continue in-progress lesson
+  if (continueLesson) {
+    const allScenarios = getAllActiveScenarios();
+    const match = allScenarios.find((s) => s.slug === continueLesson.scenarioId);
+    return {
+      scenarioId: continueLesson.scenarioId,
+      title: continueLesson.title,
+      packTitle: match?.packTitle ?? '',
+      reason: 'Continue where you left off',
+    };
+  }
+
+  // Build set of completed scenario slugs
+  const completedSlugs = new Set(
+    (completedRows ?? []).map((r) => r.scenarios?.slug).filter(Boolean) as string[],
+  );
+
+  // Get active non-demo scenarios
+  const allScenarios = getAllActiveScenarios().filter((s) => !s.isDemo);
+
+  // Map English level to difficulty
+  const levelMap: Record<string, string> = {
+    beginner: 'beginner',
+    intermediate: 'intermediate',
+    advanced: 'advanced',
+  };
+  const targetDifficulty = levelMap[userEnglishLevel] ?? 'beginner';
+
+  // Priority 2: match user level, not yet completed
+  const levelMatch = allScenarios.find(
+    (s) => s.difficulty === targetDifficulty && !completedSlugs.has(s.slug),
+  );
+  if (levelMatch) {
+    return {
+      scenarioId: levelMatch.slug,
+      title: levelMatch.title,
+      packTitle: levelMatch.packTitle,
+      reason: `Matches your ${userEnglishLevel} level`,
+    };
+  }
+
+  // Priority 3: any active uncompleted scenario
+  const anyUncompleted = allScenarios.find(
+    (s) => !completedSlugs.has(s.slug),
+  );
+  if (anyUncompleted) {
+    return {
+      scenarioId: anyUncompleted.slug,
+      title: anyUncompleted.title,
+      packTitle: anyUncompleted.packTitle,
+      reason: 'Try this lesson next',
+    };
+  }
+
+  // Priority 4: all completed
+  if (allScenarios.length > 0) {
+    return {
+      scenarioId: allScenarios[0].slug,
+      title: allScenarios[0].title,
+      packTitle: allScenarios[0].packTitle,
+      reason: 'Practice this lesson again',
+    };
+  }
+
+  // Nothing available
+  return null;
 }

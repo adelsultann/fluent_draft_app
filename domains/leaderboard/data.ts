@@ -55,8 +55,7 @@ export async function getLeaderboard(
       )
     `)
     .eq('period_type', params.period)
-    .gte('period_start', params.periodStart)
-    .lte('period_start', params.periodStart)
+    .eq('period_start', params.periodStart)
     .order('score', { ascending: false })
     .limit(params.limit ?? 50);
 

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getNextMastery, getNextReviewAt } from '@/domains/phrase-bank/actions';
+import { getNextMastery, getNextReviewAt } from '@/domains/phrase-bank/utils';
 
 // ---------------------------------------------------------------------------
 // getNextMastery

@@ -13,7 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isExactMatch } from '@/domains/scoring/engine';
-import { getNextMastery, getNextReviewAt } from '@/domains/phrase-bank/actions';
+import { getNextMastery, getNextReviewAt } from '@/domains/phrase-bank/utils';
 import type { MasteryStatus, ReviewRating } from '@/domains/phrase-bank/types';
 
 // ---------------------------------------------------------------------------

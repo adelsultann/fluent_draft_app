@@ -18,48 +18,10 @@ import { createServerClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/supabase/auth';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ReviewPhraseInput, ReviewPhraseResult, MasteryStatus } from './types';
+import { getNextMastery, getNextReviewAt } from './utils';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbClient = SupabaseClient<any>;
-
-// ---------------------------------------------------------------------------
-// Mastery transition rules
-// ---------------------------------------------------------------------------
-
-/**
- * Determine the next mastery status after a review.
- *
- * Rules:
- *   - `new` + any rating → `learning`
- *   - `learning` + "easy" → `mastered`
- *   - `learning` + "hard" → stays `learning`
- *   - `mastered` + "easy" → stays `mastered`
- *   - `mastered` + "hard" → regresses to `learning`
- */
-export function getNextMastery(
-  currentMastery: MasteryStatus,
-  rating: 'easy' | 'hard',
-): MasteryStatus {
-  if (currentMastery === 'new') return 'learning';
-  if (currentMastery === 'learning') {
-    return rating === 'easy' ? 'mastered' : 'learning';
-  }
-  // mastered
-  return rating === 'easy' ? 'mastered' : 'learning';
-}
-
-/**
- * Calculate the next review date based on the rating.
- *
- *   - "easy" → 3 days from now
- *   - "hard" → 1 day from now
- */
-export function getNextReviewAt(rating: 'easy' | 'hard'): string {
-  const now = new Date();
-  const days = rating === 'easy' ? 3 : 1;
-  now.setDate(now.getDate() + days);
-  return now.toISOString();
-}
 
 // ---------------------------------------------------------------------------
 // Server action

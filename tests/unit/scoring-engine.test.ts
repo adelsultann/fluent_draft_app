@@ -48,6 +48,48 @@ describe('isExactMatch', () => {
   it('returns false when expected is empty and typed is not', () => {
     expect(isExactMatch('something', '')).toBe(false);
   });
+
+  // -- Edge cases
+  it('returns false when internal whitespace differs', () => {
+    // Only outer whitespace is trimmed; internal spacing must match exactly
+    expect(isExactMatch('hello   world', 'hello world')).toBe(false);
+    expect(isExactMatch('hello\tworld', 'hello world')).toBe(false);
+  });
+
+  it('returns true for strings with matching internal whitespace', () => {
+    expect(isExactMatch('hello   world', 'hello   world')).toBe(true);
+    expect(isExactMatch('  hello world  ', '  hello world  ')).toBe(true);
+  });
+
+  it('handles special characters', () => {
+    expect(isExactMatch('email@example.com', 'email@example.com')).toBe(true);
+    expect(isExactMatch('100% sure', '100% sure')).toBe(true);
+    expect(isExactMatch('$50.00', '$50.00')).toBe(true);
+  });
+
+  it('handles Unicode characters', () => {
+    expect(isExactMatch('café', 'café')).toBe(true);
+    expect(isExactMatch('résumé', 'resume')).toBe(false); // accent matters
+    expect(isExactMatch('naïve', 'naive')).toBe(false); // diaeresis matters
+  });
+
+  it('handles newlines and tabs exactly', () => {
+    expect(isExactMatch('line1\nline2', 'line1\nline2')).toBe(true);
+    expect(isExactMatch('line1\nline2', 'line1 line2')).toBe(false);
+    expect(isExactMatch('col1\tcol2', 'col1\tcol2')).toBe(true);
+  });
+
+  it('handles numbers and mixed content', () => {
+    expect(isExactMatch('Room 101', 'Room 101')).toBe(true);
+    expect(isExactMatch('Room 101', 'room 101')).toBe(false); // case-sensitive
+    expect(isExactMatch('Step 1: Introduction', 'Step 1: Introduction')).toBe(true);
+  });
+
+  it('handles long strings', () => {
+    const long = 'a'.repeat(10000);
+    expect(isExactMatch(long, long)).toBe(true);
+    expect(isExactMatch(long + ' ', long)).toBe(true); // outer whitespace trimmed
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -427,5 +469,136 @@ describe('calculateScore', () => {
     expect(result.phaseCompletionMultiplier).toBe(0.75);
     expect(result.totalBeforeMultiplier).toBe(36);
     expect(result.totalScore).toBe(36); // beginner ×1.0
+  });
+
+  // ---------------------------------------------------------------------------
+  // Combined scenarios (all scoring rules together)
+  // ---------------------------------------------------------------------------
+
+  it('applies all scoring rules together: accuracy + saves + streak + difficulty', () => {
+    const phraseResults = DEMO_PHRASE_IDS.slice(0, 3).map((id, i) => ({
+      keyPhraseId: id,
+      expectedText: `text ${i + 1}`,
+      typedText: `text ${i + 1}`,
+      attemptNumber: 1,
+      correct: true,
+    }));
+
+    const result = calculateScore({
+      difficulty: 'intermediate',
+      completed: true,
+      phraseResults,
+      savedPhraseCount: 2,
+      firstActivityToday: true,
+      isRepeat: false,
+    });
+    // Accuracy: 3 × 10 = 30
+    // Recall: 3 all first-try → 20
+    // Completion: 15
+    // Saves: 2 × 5 = 10
+    // Streak: 5
+    // Raw: 30 + 20 + 15 + 10 + 5 = 80
+    // ×1.2 (intermediate) = 96
+    expect(result.accuracyPoints).toBe(30);
+    expect(result.recallPoints).toBe(20);
+    expect(result.completionPoints).toBe(15);
+    expect(result.savePhrasePoints).toBe(10);
+    expect(result.streakBonus).toBe(5);
+    expect(result.difficultyMultiplier).toBe(1.2);
+    expect(result.totalBeforeMultiplier).toBe(80);
+    expect(result.totalScore).toBe(96);
+  });
+
+  it('applies all scoring rules with repeat and phase penalties together', () => {
+    const phraseResults = DEMO_PHRASE_IDS.slice(0, 2).map((id, i) => ({
+      keyPhraseId: id,
+      expectedText: `text ${i + 1}`,
+      typedText: `text ${i + 1}`,
+      attemptNumber: i === 0 ? 1 : 2, // first on try 1, second on try 2
+      correct: true,
+    }));
+
+    const result = calculateScore({
+      difficulty: 'advanced',
+      completed: true,
+      phraseResults,
+      savedPhraseCount: 1,
+      firstActivityToday: true,
+      isRepeat: true,
+      completedPhases: 3,
+    });
+    // Accuracy: 10 + 5 = 15
+    // Recall: NOT perfect (phrase 2 on retry) → 0
+    // Completion: 15
+    // Saves: 1 × 5 = 5
+    // Streak: 5
+    // Raw: 15 + 0 + 15 + 5 + 5 = 40
+    // Repeat ×0.5 → 20
+    // Phase ×0.75 → 15
+    // Math.round(40 × 0.5 × 0.75) = Math.round(15) = 15
+    // Advanced ×1.5 → 22.5 → Math.round = 23
+    expect(result.accuracyPoints).toBe(15);
+    expect(result.recallPoints).toBe(0);
+    expect(result.completionPoints).toBe(15);
+    expect(result.savePhrasePoints).toBe(5);
+    expect(result.streakBonus).toBe(5);
+    expect(result.repeatMultiplier).toBe(0.5);
+    expect(result.phaseCompletionMultiplier).toBe(0.75);
+    expect(result.difficultyMultiplier).toBe(1.5);
+    expect(result.totalBeforeMultiplier).toBe(15);
+    expect(result.totalScore).toBe(23);
+  });
+
+  it('awards correct-first-try for multiple attempts where some fail and some pass', () => {
+    const phraseResults = [
+      { keyPhraseId: DEMO_PHRASE_IDS[0], expectedText: 'hello', typedText: 'hello', attemptNumber: 1, correct: true },
+      { keyPhraseId: DEMO_PHRASE_IDS[1], expectedText: 'world', typedText: 'wrong', attemptNumber: 1, correct: false },
+      { keyPhraseId: DEMO_PHRASE_IDS[2], expectedText: 'test', typedText: 'test', attemptNumber: 2, correct: true },
+    ];
+
+    const result = calculateScore({
+      ...baseInput,
+      phraseResults,
+      completed: true,
+    });
+    // Accuracy: 10 (phrase 0 first-try) + 0 (phrase 1 wrong) + 5 (phrase 2 retry) = 15
+    // Recall: phrase 1 wrong → no perfect recall → 0
+    // Completion: 15
+    // TotalBeforeMultiplier: 30
+    // Beginner ×1.0 → 30
+    expect(result.accuracyPoints).toBe(15);
+    expect(result.recallPoints).toBe(0);
+    expect(result.totalBeforeMultiplier).toBe(30);
+    expect(result.totalScore).toBe(30);
+  });
+
+  it('totalScore always equals totalBeforeMultiplier for beginner difficulty', () => {
+    const phraseResults = DEMO_PHRASE_IDS.slice(0, 2).map((id) => ({
+      keyPhraseId: id,
+      expectedText: 'text',
+      typedText: 'text',
+      attemptNumber: 1,
+      correct: true,
+    }));
+
+    const result = calculateScore({
+      difficulty: 'beginner',
+      completed: true,
+      phraseResults,
+      savedPhraseCount: 3,
+      firstActivityToday: true,
+      isRepeat: false,
+    });
+    expect(result.difficultyMultiplier).toBe(1.0);
+    expect(result.totalScore).toBe(result.totalBeforeMultiplier);
+  });
+
+  it('SCORING constants match expected documented values', () => {
+    expect(SCORING.CORRECT_FIRST_TRY).toBe(10);
+    expect(SCORING.CORRECT_AFTER_RETRY).toBe(5);
+    expect(SCORING.COMPLETE_LESSON).toBe(15);
+    expect(SCORING.PERFECT_RECALL_BONUS).toBe(20);
+    expect(SCORING.SAVE_PHRASE).toBe(5);
+    expect(SCORING.DAILY_STREAK).toBe(5);
   });
 });

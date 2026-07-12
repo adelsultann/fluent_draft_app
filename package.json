@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "verify:rls": "tsx --env-file=.env.local scripts/verify-rls.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

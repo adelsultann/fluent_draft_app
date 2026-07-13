@@ -1466,21 +1466,21 @@ export default function PracticeShell({ scenario }: PracticeShellProps) {
     <div className="space-y-6">
       {/* Breadcrumb + header */}
       <div>
-        <p className="text-xs text-text-muted">
+        <p className="flex flex-wrap items-baseline gap-x-1 text-xs text-text-muted">
           <a href="/packs" className="hover:text-action transition-colors">
             Packs
           </a>
-          <span className="mx-1.5">/</span>
+          <span aria-hidden="true">/</span>
           <a
             href={`/packs/${scenario.packId}`}
-            className="hover:text-action transition-colors"
+            className="max-w-[160px] truncate hover:text-action transition-colors"
           >
             {scenario.packTitle}
           </a>
-          <span className="mx-1.5">/</span>
-          <span className="text-text">{scenario.title}</span>
+          <span aria-hidden="true">/</span>
+          <span className="max-w-[180px] truncate text-text">{scenario.title}</span>
         </p>
-        <h1 className="mt-2 text-2xl font-semibold text-primary">{scenario.title}</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-primary break-words">{scenario.title}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <ToneBadge tone={scenario.tone} />
           <Badge variant="muted" className="capitalize">

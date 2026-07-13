@@ -123,7 +123,7 @@ export default async function DemoPage() {
             This is a free demo. Sign up to save your progress, earn XP, and compete on
             the leaderboard.
           </p>
-          <div className="mt-4 flex justify-center gap-3">
+          <div className="mt-4 flex flex-wrap justify-center gap-3 sm:flex-nowrap">
             <a
               href="/demo/start"
               className="rounded-md bg-action px-6 py-2.5 text-sm font-medium text-white hover:bg-action/90 transition-colors"

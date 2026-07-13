@@ -200,7 +200,7 @@ export default function DashboardSummaryView({ data }: DashboardSummaryProps) {
     <div className="space-y-6">
       {/* Welcome */}
       <div>
-        <h1 className="text-2xl font-semibold text-primary">
+        <h1 className="text-2xl font-semibold text-primary break-words">
           Welcome back, {data.displayName}
         </h1>
         <p className="mt-1 text-sm text-text-muted">

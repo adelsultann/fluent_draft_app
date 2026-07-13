@@ -14,6 +14,7 @@ This folder contains the source-of-truth planning documents for FluentDraft.
 8. [project-structure.md](./project-structure.md) - Planned Next.js code organization.
 9. [style-guide.md](./style-guide.md) - Visual design direction, palette, UI rules, and anti-patterns.
 10. [testing-strategy.md](./testing-strategy.md) - Unit, integration, E2E, manual QA, RLS, and release checks.
+11. [deployment.md](./deployment.md) - Production environment configuration, Supabase setup, hosting settings, and pre-deploy checklist.
 
 ## External Tracker
 
